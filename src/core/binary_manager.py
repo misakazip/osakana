@@ -2,12 +2,11 @@
 
 インストール方式:
   Windows : winget
-  Linux   : yt-dlp/ffmpeg は curl（GitHubリリース）;
+  Linux   : yt-dlp/ffmpeg は curl（GitHubリリース）→ /usr/local/bin へ pkexec でインストール;
             aria2c はシステムパッケージマネージャ
 """
 from __future__ import annotations
 
-import os
 import shutil
 import stat
 import subprocess
@@ -57,7 +56,7 @@ _CONFIG_KEYS: Dict[str, str] = {
     "aria2c": "Aria2cPath",
 }
 
-LOCAL_BIN = Path.home() / ".local" / "bin"
+SYSTEM_BIN = Path("/usr/local/bin")
 
 ProgressCallback = Callable[[int], None]  # 0-100
 
@@ -148,25 +147,58 @@ class BinaryManager:
         arch = "aarch64" if self._platform.is_arm64 else "x86_64"
         return _DL_URLS["ffmpeg"][arch]
 
+    def _pkexec_install_to_system(self, src: Path, name: str) -> str:
+        """pkexec を使って src を /usr/local/bin/<name> にインストールする。
+
+        Polkit の GUI 権限昇格ダイアログが表示されるため、
+        GUI アプリからでも安全に root 権限を要求できる。
+        pkexec が存在しない場合は RuntimeError を投げる。
+        """
+        pkexec = shutil.which("pkexec")
+        if pkexec is None:
+            raise RuntimeError(
+                "pkexec が見つかりません。\n"
+                f"ターミナルで手動インストールしてください:\n"
+                f"  sudo install -m 755 {src} {SYSTEM_BIN / name}"
+            )
+
+        dest = SYSTEM_BIN / name
+        result = subprocess.run(
+            [pkexec, "install", "-m", "755", "-o", "root", "-g", "root",
+             str(src), str(dest)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                result.stderr or result.stdout or f"{name} のインストールに失敗しました。"
+            )
+        return str(dest)
+
     def _curl_binary(
         self,
         name: str,
         url: str,
         progress: Optional[ProgressCallback],
     ) -> str:
-        """HTTP経由で単一の実行可能バイナリをダウンロードする。"""
-        LOCAL_BIN.mkdir(parents=True, exist_ok=True)
-        dest = LOCAL_BIN / name
-        _download_file(url, dest, progress)
-        _make_executable(dest)
-        self._config.set(_CONFIG_KEYS[name], str(dest))
-        return str(dest)
+        """HTTP経由で単一の実行可能バイナリをダウンロードし、/usr/local/bin にインストールする。"""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{name}") as tmp:
+            tmp_path = Path(tmp.name)
+
+        try:
+            _download_file(url, tmp_path, progress)
+            _make_executable(tmp_path)
+            dest = self._pkexec_install_to_system(tmp_path, name)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+        self._config.set(_CONFIG_KEYS[name], dest)
+        return dest
 
     def _install_ffmpeg_linux(
         self, progress: Optional[ProgressCallback]
     ) -> Optional[str]:
         url = self._ffmpeg_url()
-        LOCAL_BIN.mkdir(parents=True, exist_ok=True)
 
         with tempfile.NamedTemporaryFile(suffix=".tar.xz", delete=False) as tmp:
             tmp_path = Path(tmp.name)
@@ -178,22 +210,30 @@ class BinaryManager:
             if progress:
                 progress(75)
 
-            # ffmpeg バイナリのみを展開
-            dest = LOCAL_BIN / "ffmpeg"
-            with tarfile.open(tmp_path, "r:xz") as tar:
-                for member in tar.getmembers():
-                    if Path(member.name).name == "ffmpeg" and member.isfile():
-                        member.name = "ffmpeg"
-                        tar.extract(member, path=LOCAL_BIN, filter="data")
-                        break
-                else:
-                    raise RuntimeError("ffmpeg binary not found inside archive")
+            # ffmpeg バイナリのみを一時ディレクトリに展開
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp_ffmpeg = Path(tmpdir) / "ffmpeg"
+                with tarfile.open(tmp_path, "r:xz") as tar:
+                    for member in tar.getmembers():
+                        if Path(member.name).name == "ffmpeg" and member.isfile():
+                            member.name = "ffmpeg"
+                            tar.extract(member, path=tmpdir, filter="data")
+                            break
+                    else:
+                        raise RuntimeError("ffmpeg binary not found inside archive")
 
-            _make_executable(dest)
-            self._config.set(_CONFIG_KEYS["ffmpeg"], str(dest))
+                _make_executable(tmp_ffmpeg)
+
+                if progress:
+                    progress(90)
+
+                # pkexec で /usr/local/bin へインストール（GUI 権限昇格）
+                dest = self._pkexec_install_to_system(tmp_ffmpeg, "ffmpeg")
+
+            self._config.set(_CONFIG_KEYS["ffmpeg"], dest)
             if progress:
                 progress(100)
-            return str(dest)
+            return dest
         finally:
             tmp_path.unlink(missing_ok=True)
 
