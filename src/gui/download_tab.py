@@ -164,6 +164,11 @@ class DownloadTab(QWidget):
             "レート制限とリクエスト間隔を設けてbot検知を回避します\n"
             "(--rate-limit 5M  --min-sleep-interval 15  --max-sleep-interval 45)"
         )
+        self._members_only_cb = QCheckBox("メンバーシップのみ")
+        self._members_only_cb.setToolTip(
+            "チャンネルメンバー限定の動画のみダウンロードします\n"
+            "(--match-filter \"availability=subscriber_only\")"
+        )
 
         self._notify_cb = QCheckBox("完了時に通知")
         self._notify_cb.setToolTip("ダウンロード完了時にデスクトップ通知を表示します")
@@ -179,6 +184,7 @@ class DownloadTab(QWidget):
         layout.addWidget(self._subs_cb)
         layout.addWidget(self._h265_cb)
         layout.addWidget(self._antibot_cb)
+        layout.addWidget(self._members_only_cb)
         layout.addWidget(self._notify_cb)
 
         # aria2c 並列接続数（設定で有効化されている場合のみ表示）
@@ -312,6 +318,7 @@ class DownloadTab(QWidget):
         playlist      = self._playlist_cb.isChecked()
         convert_h265  = self._h265_cb.isChecked()
         avoid_bot     = self._antibot_cb.isChecked()
+        members_only  = self._members_only_cb.isChecked()
         trim_start    = self._trim.trim_start() if self._trim.is_trim_enabled() else ""
         trim_end      = self._trim.trim_end()   if self._trim.is_trim_enabled() else ""
 
@@ -346,6 +353,7 @@ class DownloadTab(QWidget):
                 playlist=playlist,
                 convert_h265=convert_h265,
                 avoid_bot_detection=avoid_bot,
+                members_only=members_only,
                 trim_start=trim_start,
                 trim_end=trim_end,
                 filename_template=filename_tpl,

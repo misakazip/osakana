@@ -66,6 +66,7 @@ class DownloadTask:
     playlist: bool = False
     convert_h265: bool = False
     avoid_bot_detection: bool = False
+    members_only: bool = False  # メンバー限定動画のみダウンロードする
     trim_start: str = ""        # "HH:MM:SS" または秒数、空 = トリムなし
     trim_end: str = ""          # "HH:MM:SS" または秒数、空 = 動画の末尾まで
     filename_template: str = "%(title)s [%(id)s].%(ext)s"  # yt-dlp の -o テンプレート
@@ -210,6 +211,9 @@ class DownloadWorker(QThread):
                 "--min-sleep-interval", "15",
                 "--max-sleep-interval", "45",
             ]
+
+        if task.members_only:
+            cmd += ["--match-filter", "availability=subscriber_only"]
 
         # 後処理オプション（設定ページから）
         if self._config.get("EmbedThumbnail"):
