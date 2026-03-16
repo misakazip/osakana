@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -75,7 +76,7 @@ class DownloadTab(QWidget):
         root.setSpacing(8)
         root.setContentsMargins(10, 10, 10, 10)
 
-        # 上部コントロールをスクロールエリアに収める
+        # ページ全体をスクロールエリアに収める
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -89,20 +90,19 @@ class DownloadTab(QWidget):
         inner_layout.addWidget(self._build_output_row())
         inner_layout.addLayout(self._build_action_row())
         inner_layout.addWidget(self._build_trim_widget())
-        inner_layout.addStretch()
-        scroll.setWidget(inner)
-
-        # キューとログは常時表示
-        root.addWidget(scroll)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         sep.setFrameShadow(QFrame.Shadow.Plain)
         sep.setStyleSheet("color: white;")
-        root.addWidget(sep)
+        inner_layout.addWidget(sep)
 
-        root.addWidget(self._build_queue_group())
-        root.addWidget(self._build_raw_log_group())
+        inner_layout.addWidget(self._build_queue_group())
+        inner_layout.addWidget(self._build_raw_log_group())
+        scroll.setWidget(inner)
+
+        root.addWidget(scroll)
+        root.addWidget(self._build_overall_progress())
 
     def _build_url_group(self) -> QGroupBox:
         box = QGroupBox("URL")
@@ -252,6 +252,26 @@ class DownloadTab(QWidget):
         layout.addWidget(self._queue)
         return box
 
+    def _build_overall_progress(self) -> QWidget:
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 2, 0, 0)
+        layout.setSpacing(8)
+
+        self._overall_bar = QProgressBar()
+        self._overall_bar.setRange(0, 100)
+        self._overall_bar.setValue(0)
+        self._overall_bar.setTextVisible(True)
+        self._overall_bar.setFixedHeight(18)
+
+        self._overall_label = QLabel("0 / 0")
+        self._overall_label.setFixedWidth(60)
+        self._overall_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(self._overall_bar)
+        layout.addWidget(self._overall_label)
+        return widget
+
     def _build_raw_log_group(self) -> QGroupBox:
         box = QGroupBox("RAW ログ")
         box.setCheckable(True)
@@ -294,6 +314,7 @@ class DownloadTab(QWidget):
         self._manager.task_added.connect(self._on_task_added)
         self._manager.progress_updated.connect(self._queue.update_progress)
         self._manager.status_changed.connect(self._queue.update_status)
+        self._manager.status_changed.connect(lambda *_: self._update_overall_progress())
         self._manager.title_fetched.connect(self._queue.update_title)
         self._manager.raw_output.connect(self._on_raw_output)
         self._queue.cancel_requested.connect(self._manager.cancel)
@@ -302,9 +323,16 @@ class DownloadTab(QWidget):
     # スロット
     # ------------------------------------------------------------------
 
+    def _update_overall_progress(self) -> None:
+        done, total = self._queue.get_counts()
+        self._overall_label.setText(f"{done} / {total}")
+        pct = int(done / total * 100) if total > 0 else 0
+        self._overall_bar.setValue(pct)
+
     def _on_task_added(self, task: DownloadTask) -> None:
         display = task.url[:80] + ("…" if len(task.url) > 80 else "")
         self._queue.add_task(task.id, display)
+        self._update_overall_progress()
 
     def _on_download(self) -> None:
         urls = [
@@ -372,6 +400,7 @@ class DownloadTab(QWidget):
 
     def _on_clear_finished(self) -> None:
         self._queue.remove_finished()
+        self._update_overall_progress()
 
     def _sync_trim_url(self) -> None:
         first = self._url_edit.toPlainText().splitlines()

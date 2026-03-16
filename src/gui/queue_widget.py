@@ -135,6 +135,17 @@ class QueueWidget(QTableWidget):
             return
         self._set_cell(row, _COL_TITLE, title)
 
+    def get_counts(self) -> tuple[int, int]:
+        """(完了数, 合計数) を返す。完了には done/failed/cancelled を含む。"""
+        done_statuses = {"done", "failed", "cancelled"}
+        total = len(self._id_to_row)
+        done = sum(
+            1 for row in self._id_to_row.values()
+            if (item := self.item(row, _COL_STATUS))
+            and item.data(Qt.ItemDataRole.UserRole) in done_statuses
+        )
+        return done, total
+
     def remove_finished(self) -> None:
         """完了 / キャンセル / 失敗したすべての行を削除する。"""
         finished_statuses = {"done", "failed", "cancelled"}
