@@ -237,7 +237,7 @@ class BinaryManager:
         finally:
             tmp_path.unlink(missing_ok=True)
 
-    def _pkg_manager(self, package: str) -> Optional[str]:
+    def _pkg_manager(self, package: str) -> Optional[List[str]]:
         """インストールに使えるパッケージマネージャを検出し、コマンドを返す。
 
         sudo を伴う実際のインストールは GUI 側で pkexec 等を介して行うため、

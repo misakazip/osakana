@@ -9,7 +9,7 @@
 """
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -48,7 +48,7 @@ class _InstallWorker(QThread):
         self,
         name: str,
         manager: BinaryManager,
-        parent: QWidget = None,
+        parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self._name = name
@@ -80,7 +80,7 @@ class SetupWizard(QDialog):
         manager: BinaryManager,
         config: Config,
         platform: PlatformInfo,
-        parent: QWidget = None,
+        parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self._missing   = list(missing)

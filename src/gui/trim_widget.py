@@ -30,9 +30,15 @@ from PyQt6.QtWidgets import (
 )
 
 # Qt Multimedia のインポートを試みる — 利用不可の場合は機能を縮退させる
-try:
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
     from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
     from PyQt6.QtMultimediaWidgets import QVideoWidget
+
+try:
+    from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer  # noqa: F811
+    from PyQt6.QtMultimediaWidgets import QVideoWidget  # noqa: F811
     _MULTIMEDIA_OK = True
 except ImportError:
     _MULTIMEDIA_OK = False
@@ -103,7 +109,7 @@ class _StreamUrlWorker(QThread):
 class TrimWidget(QGroupBox):
     """折りたたみ可能な切り抜き範囲セレクタ（動画プレビュー付き）。"""
 
-    def __init__(self, parent: QWidget = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__("切り抜き", parent)
         self.setCheckable(True)
         self.setChecked(False)
@@ -273,6 +279,8 @@ class TrimWidget(QGroupBox):
         self._worker.start()
 
     def _on_stream_ready(self, stream_url: str) -> None:
+        if self._player is None:
+            return
         self._load_btn.setEnabled(True)
         self._load_status.setText("読み込み完了")
         self._player.setSource(QUrl(stream_url))
@@ -301,15 +309,18 @@ class TrimWidget(QGroupBox):
         self._slider_dragging = True
 
     def _on_slider_released(self) -> None:
+        assert self._player is not None
         self._slider_dragging = False
         self._player.setPosition(self._seek_slider.value())
 
     def _on_seek_moved(self, pos_ms: int) -> None:
         # ドラッグ中は再生位置を動かさず時刻ラベルだけ更新する
+        assert self._player is not None
         total = self._player.duration()
         self._time_lbl.setText(f"{_fmt(pos_ms / 1000)} / {_fmt(total / 1000)}")
 
     def _on_position_changed(self, pos_ms: int) -> None:
+        assert self._player is not None
         if not self._slider_dragging:
             self._seek_slider.setValue(pos_ms)
         total = self._player.duration()

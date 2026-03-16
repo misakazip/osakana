@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 import uuid
 from dataclasses import dataclass, field
@@ -91,11 +92,11 @@ class DownloadWorker(QThread):
     download_done    = pyqtSignal(str, bool, str)          # id, 成否, エラー
     raw_output       = pyqtSignal(str, str)                # id, 生の出力行
 
-    def __init__(self, task: DownloadTask, config: Config, parent: QObject = None) -> None:
+    def __init__(self, task: DownloadTask, config: Config, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self.task = task
         self._config = config
-        self._process: Optional[object] = None
+        self._process: Optional[subprocess.Popen[str]] = None
         self._cancelled = False
 
     def cancel(self) -> None:
@@ -111,8 +112,6 @@ class DownloadWorker(QThread):
     # ------------------------------------------------------------------
 
     def run(self) -> None:
-        import subprocess
-
         self.status_changed.emit(self.task.id, "downloading")
 
         # タイトルを事前取得する（ベストエフォート、失敗しても非致命的）
@@ -133,6 +132,7 @@ class DownloadWorker(QThread):
                 env=env,
                 **_POPEN_FLAGS,
             )
+            assert self._process.stdout is not None
             for line in iter(self._process.stdout.readline, ""):
                 if self._cancelled:
                     break
@@ -292,7 +292,6 @@ class DownloadWorker(QThread):
             self.status_changed.emit(self.task.id, "processing")
 
     def _fetch_title(self) -> str:
-        import subprocess
         try:
             ytdlp = self._config.get("YtdlpPath", "yt-dlp")
             result = subprocess.run(
@@ -323,7 +322,7 @@ class DownloadManager(QObject):
     raw_output       = pyqtSignal(str, str)         # id, 生の出力行
     queue_stats      = pyqtSignal(int, int)         # アクティブ数, キュー数
 
-    def __init__(self, config: Config, parent: QObject = None) -> None:
+    def __init__(self, config: Config, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._config = config
         self._pending: List[DownloadTask] = []

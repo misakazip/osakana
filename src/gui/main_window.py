@@ -1,7 +1,7 @@
 """アプリケーションのメインウィンドウ。"""
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, cast
 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -54,8 +54,10 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._st_tab, "設定")
 
         # ステータスバー
+        status_bar = self.statusBar()
+        assert status_bar is not None
         self._status_lbl = QLabel("準備完了")
-        self.statusBar().addPermanentWidget(self._status_lbl)
+        status_bar.addPermanentWidget(self._status_lbl)
 
         # テーマ切替ボタン（右端: ダーク→🌙 / ライト→☀）
         self._theme_btn = QPushButton()
@@ -64,7 +66,7 @@ class MainWindow(QMainWindow):
         self._theme_btn.setFlat(True)
         self._update_theme_button()
         self._theme_btn.clicked.connect(self._toggle_theme)
-        self.statusBar().addPermanentWidget(self._theme_btn)
+        status_bar.addPermanentWidget(self._theme_btn)
 
         self._dm.queue_stats.connect(self._update_status)
         self._dm.task_added.connect(self._on_task_added)
@@ -79,9 +81,9 @@ class MainWindow(QMainWindow):
         if icon.isNull():
             # アプリアイコン未設定時のフォールバック。
             # Windows では null アイコンだとトレイに表示されず showMessage() も無効になる。
-            icon = QApplication.style().standardIcon(
-                QStyle.StandardPixmap.SP_ComputerIcon
-            )
+            style = QApplication.style()
+            if style is not None:
+                icon = style.standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
         self._tray = QSystemTrayIcon(icon, self)
         self._tray.show()
 
@@ -97,7 +99,7 @@ class MainWindow(QMainWindow):
         is_dark = not self._config.get("IsDarkThemeEnabled", True)
         self._config.set("IsDarkThemeEnabled", is_dark)
         stylesheet = DARK_STYLE if is_dark else LIGHT_STYLE
-        QApplication.instance().setStyleSheet(stylesheet)
+        cast(QApplication, QApplication.instance()).setStyleSheet(stylesheet)
         self._update_theme_button()
 
     # ------------------------------------------------------------------

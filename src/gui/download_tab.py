@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -60,7 +60,7 @@ from gui.trim_widget import TrimWidget
 
 
 class DownloadTab(QWidget):
-    def __init__(self, manager: DownloadManager, config: Config, parent: QWidget = None) -> None:
+    def __init__(self, manager: DownloadManager, config: Config, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._manager = manager
         self._config = config

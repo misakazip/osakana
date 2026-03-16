@@ -1,6 +1,8 @@
 """設定タブ: バイナリパス、aria2c、アップデート、インストール設定。"""
 from __future__ import annotations
 
+from typing import Optional
+
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -32,7 +34,7 @@ class SettingsTab(QWidget):
         self,
         config: Config,
         binary_manager: BinaryManager,
-        parent: QWidget = None,
+        parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self._config = config
@@ -87,8 +89,9 @@ class SettingsTab(QWidget):
         return box
 
     def _on_dark_theme_toggled(self, checked: bool) -> None:
+        from typing import cast as _cast
         from PyQt6.QtWidgets import QApplication
-        QApplication.instance().setStyleSheet(DARK_STYLE if checked else LIGHT_STYLE)
+        _cast(QApplication, QApplication.instance()).setStyleSheet(DARK_STYLE if checked else LIGHT_STYLE)
 
     # --- パス ---
 

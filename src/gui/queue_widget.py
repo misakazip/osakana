@@ -1,7 +1,7 @@
 """ダウンロードキューのテーブルウィジェット。"""
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, Optional, cast
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
@@ -46,7 +46,7 @@ _COL_ACT    = 5
 class QueueWidget(QTableWidget):
     cancel_requested = pyqtSignal(str)  # タスクID
 
-    def __init__(self, parent: QWidget = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(0, len(_COLUMNS), parent)
         self._id_to_row: Dict[str, int] = {}
         self._setup_ui()
@@ -58,6 +58,7 @@ class QueueWidget(QTableWidget):
     def _setup_ui(self) -> None:
         self.setHorizontalHeaderLabels(_COLUMNS)
         hh = self.horizontalHeader()
+        assert hh is not None
         hh.setSectionResizeMode(_COL_TITLE,  QHeaderView.ResizeMode.Stretch)
         hh.setSectionResizeMode(_COL_STATUS, QHeaderView.ResizeMode.ResizeToContents)
         hh.setSectionResizeMode(_COL_PROG,   QHeaderView.ResizeMode.Fixed)
@@ -67,7 +68,9 @@ class QueueWidget(QTableWidget):
         hh.setSectionResizeMode(_COL_ACT,    QHeaderView.ResizeMode.Fixed)
         self.setColumnWidth(_COL_ACT, 50)
 
-        self.verticalHeader().setVisible(False)
+        vh = self.verticalHeader()
+        assert vh is not None
+        vh.setVisible(False)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setAlternatingRowColors(True)
@@ -116,7 +119,7 @@ class QueueWidget(QTableWidget):
         row = self._id_to_row.get(task_id)
         if row is None:
             return
-        bar: Optional[QProgressBar] = self.cellWidget(row, _COL_PROG)
+        bar = cast(Optional[QProgressBar], self.cellWidget(row, _COL_PROG))
         if bar:
             bar.setValue(int(pct))
         self._set_cell(row, _COL_SPEED, speed)
@@ -128,7 +131,7 @@ class QueueWidget(QTableWidget):
             return
         self._set_status_item(row, status)
         if status == "done":
-            bar: Optional[QProgressBar] = self.cellWidget(row, _COL_PROG)
+            bar = cast(Optional[QProgressBar], self.cellWidget(row, _COL_PROG))
             if bar:
                 bar.setValue(100)
 

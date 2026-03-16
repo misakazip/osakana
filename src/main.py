@@ -51,7 +51,6 @@ def main() -> None:
     aria2c_path = binary_manager.find("aria2c")
     if aria2c_path:
         config.set("Aria2cPath", aria2c_path)
-        config.save()
 
     # ----------------------------------------------------------------
     # 自動アップデート確認（インタラクティブ）
