@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
+    QMessageBox,  # アップデート確認ダイアログで使用
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
@@ -24,6 +24,7 @@ from core._license import LICENSE_TEXT
 from core.binary_manager import BinaryManager
 from core.config import Config
 from core.updater import YtDlpUpdater
+from gui.style import DARK_STYLE, LIGHT_STYLE
 
 
 class SettingsTab(QWidget):
@@ -38,6 +39,7 @@ class SettingsTab(QWidget):
         self._bm = binary_manager
         self._setup_ui()
         self._load_values()
+        self._connect_auto_save()
 
     # ------------------------------------------------------------------
     # UI 構築
@@ -57,6 +59,7 @@ class SettingsTab(QWidget):
         inner_layout.setSpacing(10)
         inner_layout.setContentsMargins(0, 0, 0, 0)
 
+        inner_layout.addWidget(self._build_appearance_group())
         inner_layout.addWidget(self._build_paths_group())
         inner_layout.addWidget(self._build_filename_group())
         inner_layout.addWidget(self._build_download_ctrl_group())
@@ -73,10 +76,19 @@ class SettingsTab(QWidget):
         scroll.setWidget(inner)
         root.addWidget(scroll)
 
-        save_btn = QPushButton("設定を保存")
-        save_btn.setFixedHeight(34)
-        save_btn.clicked.connect(self._save)
-        root.addWidget(save_btn)
+    # --- 外観 ---
+
+    def _build_appearance_group(self) -> QGroupBox:
+        box = QGroupBox("外観")
+        layout = QVBoxLayout(box)
+        self._dark_theme_cb = QCheckBox("ダークテーマを使用する")
+        self._dark_theme_cb.toggled.connect(self._on_dark_theme_toggled)
+        layout.addWidget(self._dark_theme_cb)
+        return box
+
+    def _on_dark_theme_toggled(self, checked: bool) -> None:
+        from PyQt6.QtWidgets import QApplication
+        QApplication.instance().setStyleSheet(DARK_STYLE if checked else LIGHT_STYLE)
 
     # --- パス ---
 
@@ -378,6 +390,11 @@ class SettingsTab(QWidget):
     _SB_VALUES = ["off", "sponsor", "default", "all"]
 
     def _load_values(self) -> None:
+        # 外観
+        self._dark_theme_cb.blockSignals(True)
+        self._dark_theme_cb.setChecked(bool(self._config.get("IsDarkThemeEnabled", True)))
+        self._dark_theme_cb.blockSignals(False)
+
         self._ytdlp_edit.setText(self._config.get("YtdlpPath", ""))
         self._ffmpeg_edit.setText(self._config.get("FfmpegPath", ""))
         self._aria2c_edit.setText(self._config.get("Aria2cPath", ""))
@@ -425,6 +442,32 @@ class SettingsTab(QWidget):
 
         self._extra_args_edit.setText(self._config.get("ExtraArgs", ""))
 
+    def _connect_auto_save(self) -> None:
+        """全ウィジェットの変更シグナルを _save に接続する。"""
+        # テキスト入力欄はフォーカスを外したとき / Enter を押したときに保存
+        for edit in (
+            self._ytdlp_edit, self._ffmpeg_edit, self._aria2c_edit,
+            self._filename_edit, self._speed_limit_edit, self._archive_edit,
+            self._sub_langs_edit, self._proxy_edit, self._extra_args_edit,
+        ):
+            edit.editingFinished.connect(self._save)
+
+        # スピンボックス・コンボボックス・チェックボックス・ラジオボタンは即時保存
+        self._retries_spin.valueChanged.connect(self._save)
+        self._aria2c_conn_spin.valueChanged.connect(self._save)
+        self._max_dl_spin.valueChanged.connect(self._save)
+        self._sub_format_combo.currentIndexChanged.connect(self._save)
+        self._sponsorblock_combo.currentIndexChanged.connect(self._save)
+        self._cookies_browser_combo.currentIndexChanged.connect(self._save)
+        self._auto_subs_cb.toggled.connect(self._save)
+        self._embed_thumbnail_cb.toggled.connect(self._save)
+        self._embed_metadata_cb.toggled.connect(self._save)
+        self._aria2c_enabled_cb.toggled.connect(self._save)
+        self._dark_theme_cb.toggled.connect(self._save)
+        self._auto_update_cb.toggled.connect(self._save)
+        self._auto_install_rb.toggled.connect(self._save)
+        self._manual_install_rb.toggled.connect(self._save)
+
     def _save(self) -> None:
         browser = self._cookies_browser_combo.currentText()
         self._config.update(
@@ -455,9 +498,10 @@ class SettingsTab(QWidget):
                 "AutoUpdate":           self._auto_update_cb.isChecked(),
                 "AutoInstall":          self._auto_install_rb.isChecked(),
                 "ExtraArgs":            self._extra_args_edit.text().strip(),
+                # 外観
+                "IsDarkThemeEnabled":   self._dark_theme_cb.isChecked(),
             }
         )
-        QMessageBox.information(self, "保存完了", "設定を保存しました。")
 
     # ------------------------------------------------------------------
     # スロット

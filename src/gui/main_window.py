@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QLabel,
     QMainWindow,
+    QPushButton,
     QStyle,
     QSystemTrayIcon,
     QTabWidget,
@@ -17,6 +18,7 @@ from core.config import Config
 from core.downloader import DownloadManager, DownloadTask
 from gui.download_tab import DownloadTab
 from gui.settings_tab import SettingsTab
+from gui.style import DARK_STYLE, LIGHT_STYLE
 
 
 class MainWindow(QMainWindow):
@@ -52,6 +54,15 @@ class MainWindow(QMainWindow):
         self._status_lbl = QLabel("準備完了")
         self.statusBar().addPermanentWidget(self._status_lbl)
 
+        # テーマ切替ボタン（右端: ダーク→🌙 / ライト→☀）
+        self._theme_btn = QPushButton()
+        self._theme_btn.setProperty("theme-toggle", True)
+        self._theme_btn.setToolTip("ライト / ダークモード切替")
+        self._theme_btn.setFlat(True)
+        self._update_theme_button()
+        self._theme_btn.clicked.connect(self._toggle_theme)
+        self.statusBar().addPermanentWidget(self._theme_btn)
+
         self._dm.queue_stats.connect(self._update_status)
         self._dm.task_added.connect(self._on_task_added)
         self._dm.title_fetched.connect(self._on_title_fetched)
@@ -70,6 +81,21 @@ class MainWindow(QMainWindow):
             )
         self._tray = QSystemTrayIcon(icon, self)
         self._tray.show()
+
+    # ------------------------------------------------------------------
+    # テーマ
+    # ------------------------------------------------------------------
+
+    def _update_theme_button(self) -> None:
+        is_dark = self._config.get("IsDarkThemeEnabled", True)
+        self._theme_btn.setText("🌙" if is_dark else "☀")
+
+    def _toggle_theme(self) -> None:
+        is_dark = not self._config.get("IsDarkThemeEnabled", True)
+        self._config.set("IsDarkThemeEnabled", is_dark)
+        stylesheet = DARK_STYLE if is_dark else LIGHT_STYLE
+        QApplication.instance().setStyleSheet(stylesheet)
+        self._update_theme_button()
 
     # ------------------------------------------------------------------
     # スロット
