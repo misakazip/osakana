@@ -172,14 +172,9 @@ class SetupWizard(QDialog):
         self._skip_btn.clicked.connect(self._on_skip)
         layout.addWidget(self._btn_box)
 
-        self._auto_rb.toggled.connect(self._on_mode_changed)
-
     # ------------------------------------------------------------------
     # スロット
     # ------------------------------------------------------------------
-
-    def _on_mode_changed(self, auto: bool) -> None:
-        self._install_btn.setEnabled(True)
 
     def _on_install_clicked(self) -> None:
         if self._manual_rb.isChecked():

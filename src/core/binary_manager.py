@@ -22,8 +22,6 @@ from .platform_detector import PlatformInfo
 
 # アプリの動作に必須のバイナリ
 REQUIRED = ["yt-dlp", "ffmpeg"]
-# オプションのバイナリ（aria2c）
-OPTIONAL = ["aria2c"]
 
 # Linux 向けの直接ダウンロードURL（curl）
 _DL_URLS: Dict[str, Dict[str, str]] = {
@@ -81,9 +79,8 @@ class BinaryManager:
             self._config.set(key, found)
         return found
 
-    def get_missing(self, include_optional: bool = False) -> List[str]:
-        names = REQUIRED + (OPTIONAL if include_optional else [])
-        return [n for n in names if not self.find(n)]
+    def get_missing(self) -> List[str]:
+        return [n for n in REQUIRED if not self.find(n)]
 
     # ------------------------------------------------------------------
     # インストール
