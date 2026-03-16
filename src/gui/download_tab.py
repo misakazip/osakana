@@ -299,7 +299,7 @@ class DownloadTab(QWidget):
 
         # GroupBox のチェック状態でログ本体を表示/非表示
         box.toggled.connect(self._raw_log.setVisible)
-        box.toggled.connect(lambda v: clear_log_btn.parent().setVisible(v))
+        box.toggled.connect(clear_log_btn.setVisible)
         self._raw_log.setVisible(False)
         clear_log_btn.setVisible(False)
 
