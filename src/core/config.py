@@ -40,6 +40,7 @@ DEFAULTS: Dict[str, Any] = {
     "FfmpegPath": "",
     "Aria2cPath": "",
     "ExtraArgs": "",
+    "IsDarkThemeEnabled": True,
 }
 
 

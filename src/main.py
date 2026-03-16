@@ -15,7 +15,7 @@ from core.platform_detector import detect as detect_platform
 from core.updater import YtDlpUpdater
 from gui.main_window import MainWindow
 from gui.setup_wizard import SetupWizard
-from gui.style import STYLE
+from gui.style import DARK_STYLE, LIGHT_STYLE
 
 
 def main() -> None:
@@ -23,9 +23,10 @@ def main() -> None:
     app.setApplicationName("Osakana")
     app.setApplicationVersion("1.0.0")
     app.setStyle("Fusion")
-    app.setStyleSheet(STYLE)
 
     config = Config()
+    stylesheet = DARK_STYLE if config.get("IsDarkThemeEnabled", True) else LIGHT_STYLE
+    app.setStyleSheet(stylesheet)
     platform_info = detect_platform()
     binary_manager = BinaryManager(config, platform_info)
 
