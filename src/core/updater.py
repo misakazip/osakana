@@ -1,4 +1,4 @@
-"""yt-dlp のアップデートを確認して適用する。"""
+"""yt-dlp および Osakana 本体のアップデートを確認する。"""
 from __future__ import annotations
 
 import subprocess
@@ -8,7 +8,18 @@ import requests
 
 # PyPI の JSON API はレート制限がなく認証不要。
 # GitHub API（60 req/h）の代替として使用する。
-_LATEST_API = "https://pypi.org/pypi/yt-dlp/json"
+_YTDLP_API = "https://pypi.org/pypi/yt-dlp/json"
+
+# Osakana の GitHub リリース API
+_OSAKANA_API = "https://api.github.com/repos/misakazip/osakana/releases/latest"
+
+# 現在のアプリバージョン（pyproject.toml の version と一致させる）
+APP_VERSION = "1.0.0"
+
+
+def _parse_version(v: str) -> tuple[int, ...]:
+    """バージョン文字列を整数タプルに変換する（例: "v1.2.3" → (1, 2, 3)）。"""
+    return tuple(int(x) for x in v.lstrip("v").split(".") if x.isdigit())
 
 
 def _normalize(version: str) -> str:
@@ -85,6 +96,46 @@ class YtDlpUpdater:
         return result.stdout.strip()
 
     def _get_latest(self) -> str:
-        resp = requests.get(_LATEST_API, timeout=10)
+        resp = requests.get(_YTDLP_API, timeout=10)
         resp.raise_for_status()
         return resp.json()["info"]["version"]
+
+
+# ------------------------------------------------------------------
+# Osakana 本体のアップデート確認
+# ------------------------------------------------------------------
+
+class OsakanaUpdater:
+    """GitHub releases API を使って Osakana 本体の更新を確認する。"""
+
+    def __init__(self, current: str = APP_VERSION) -> None:
+        self._current = current
+        self._latest: Optional[str] = None
+        self._release_url: Optional[str] = None
+
+    def current_version(self) -> str:
+        return self._current
+
+    def latest_version(self) -> str:
+        if self._latest is None:
+            self._fetch()
+        return self._latest or self._current
+
+    def release_url(self) -> str:
+        """最新リリースの GitHub ページ URL を返す。"""
+        if self._latest is None:
+            self._fetch()
+        return self._release_url or ""
+
+    def needs_update(self) -> bool:
+        try:
+            return _parse_version(self.latest_version()) > _parse_version(self._current)
+        except Exception:
+            return False
+
+    def _fetch(self) -> None:
+        resp = requests.get(_OSAKANA_API, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        self._latest = data["tag_name"].lstrip("v")
+        self._release_url = data["html_url"]

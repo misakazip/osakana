@@ -19,6 +19,7 @@ CONFIG_PATH = Path.home() / ".osakana_config"
 DEFAULTS: Dict[str, Any] = {
     "AutoInstall": False,
     "AutoUpdate": False,
+    "AutoUpdateApp": False,
     "IsAria2cEnabled": False,
     "Aria2cConnections": 16,
     "MaxParallelDownloads": 2,

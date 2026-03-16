@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 from core.binary_manager import BinaryManager
 from core.config import Config
 from core.platform_detector import detect as detect_platform
-from core.updater import YtDlpUpdater
+from core.updater import APP_VERSION, OsakanaUpdater, YtDlpUpdater
 from gui.main_window import MainWindow
 from gui.setup_wizard import SetupWizard
 from gui.style import DARK_STYLE, LIGHT_STYLE
@@ -21,7 +21,7 @@ from gui.style import DARK_STYLE, LIGHT_STYLE
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("Osakana")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion(APP_VERSION)
     app.setStyle("Fusion")
 
     config = Config()
@@ -73,6 +73,26 @@ def main() -> None:
                 )
                 if answer == QMessageBox.StandardButton.Yes:
                     updater.do_update()
+        except Exception:
+            pass  # アップデート確認の失敗は致命的エラーではない
+
+    # ----------------------------------------------------------------
+    # Osakana 本体のアップデート確認
+    # ----------------------------------------------------------------
+    if config.get("AutoUpdateApp"):
+        try:
+            app_updater = OsakanaUpdater()
+            if app_updater.needs_update():
+                latest = app_updater.latest_version()
+                QMessageBox.information(
+                    None,
+                    "Osakana アップデート",
+                    f"Osakana の新しいバージョンが利用可能です。\n\n"
+                    f"現在のバージョン : {APP_VERSION}\n"
+                    f"最新バージョン   : {latest}\n\n"
+                    f"リリースページからダウンロードしてください:\n"
+                    f"{app_updater.release_url()}",
+                )
         except Exception:
             pass  # アップデート確認の失敗は致命的エラーではない
 

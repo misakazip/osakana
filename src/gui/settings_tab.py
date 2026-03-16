@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -25,7 +26,7 @@ from PyQt6.QtWidgets import (
 from core._license import LICENSE_TEXT
 from core.binary_manager import BinaryManager
 from core.config import Config
-from core.updater import YtDlpUpdater
+from core.updater import APP_VERSION, OsakanaUpdater, YtDlpUpdater
 from gui.style import DARK_STYLE, LIGHT_STYLE
 
 
@@ -319,22 +320,46 @@ class SettingsTab(QWidget):
     # --- アップデート ---
 
     def _build_update_group(self) -> QGroupBox:
-        box = QGroupBox("yt-dlp アップデート")
+        box = QGroupBox("アップデート")
         layout = QVBoxLayout(box)
 
+        # ── yt-dlp ──────────────────────────────────────────────────
+        layout.addWidget(QLabel("<b>yt-dlp</b>"))
         self._auto_update_cb = QCheckBox("起動時に自動でアップデートを確認する")
         layout.addWidget(self._auto_update_cb)
 
-        row = QWidget()
-        hl = QHBoxLayout(row)
-        hl.setContentsMargins(0, 0, 0, 0)
+        ytdlp_row = QWidget()
+        ytdlp_hl = QHBoxLayout(ytdlp_row)
+        ytdlp_hl.setContentsMargins(0, 0, 0, 0)
         check_btn = QPushButton("今すぐ確認…")
         check_btn.clicked.connect(self._check_update_now)
         self._update_status_label = QLabel("")
-        hl.addWidget(check_btn)
-        hl.addWidget(self._update_status_label)
-        hl.addStretch()
-        layout.addWidget(row)
+        ytdlp_hl.addWidget(check_btn)
+        ytdlp_hl.addWidget(self._update_status_label)
+        ytdlp_hl.addStretch()
+        layout.addWidget(ytdlp_row)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Plain)
+        layout.addWidget(sep)
+
+        # ── Osakana ─────────────────────────────────────────────────
+        layout.addWidget(QLabel("<b>Osakana</b>"))
+        self._auto_update_app_cb = QCheckBox("起動時に自動でアップデートを確認する")
+        layout.addWidget(self._auto_update_app_cb)
+
+        app_row = QWidget()
+        app_hl = QHBoxLayout(app_row)
+        app_hl.setContentsMargins(0, 0, 0, 0)
+        check_app_btn = QPushButton("今すぐ確認…")
+        check_app_btn.clicked.connect(self._check_osakana_update_now)
+        self._app_update_status_label = QLabel("")
+        app_hl.addWidget(check_app_btn)
+        app_hl.addWidget(self._app_update_status_label)
+        app_hl.addStretch()
+        layout.addWidget(app_row)
+
         return box
 
     # --- カスタムオプション ---
@@ -437,6 +462,7 @@ class SettingsTab(QWidget):
         self._max_dl_spin.setValue(self._config.get("MaxParallelDownloads", 2))
 
         self._auto_update_cb.setChecked(bool(self._config.get("AutoUpdate")))
+        self._auto_update_app_cb.setChecked(bool(self._config.get("AutoUpdateApp")))
 
         if self._config.get("AutoInstall"):
             self._auto_install_rb.setChecked(True)
@@ -468,6 +494,7 @@ class SettingsTab(QWidget):
         self._aria2c_enabled_cb.toggled.connect(self._save)
         self._dark_theme_cb.toggled.connect(self._save)
         self._auto_update_cb.toggled.connect(self._save)
+        self._auto_update_app_cb.toggled.connect(self._save)
         self._auto_install_rb.toggled.connect(self._save)
         self._manual_install_rb.toggled.connect(self._save)
 
@@ -499,6 +526,7 @@ class SettingsTab(QWidget):
                 "Aria2cConnections":    self._aria2c_conn_spin.value(),
                 "MaxParallelDownloads": self._max_dl_spin.value(),
                 "AutoUpdate":           self._auto_update_cb.isChecked(),
+                "AutoUpdateApp":        self._auto_update_app_cb.isChecked(),
                 "AutoInstall":          self._auto_install_rb.isChecked(),
                 "ExtraArgs":            self._extra_args_edit.text().strip(),
                 # 外観
@@ -554,4 +582,24 @@ class SettingsTab(QWidget):
                 self._update_status_label.setText("")
         except Exception as exc:
             self._update_status_label.setText("エラー")
+            QMessageBox.critical(self, "アップデート確認エラー", str(exc))
+
+    def _check_osakana_update_now(self) -> None:
+        self._app_update_status_label.setText("確認中…")
+        try:
+            updater = OsakanaUpdater()
+            if not updater.needs_update():
+                self._app_update_status_label.setText(f"最新です ({APP_VERSION})")
+                return
+
+            latest = updater.latest_version()
+            self._app_update_status_label.setText(f"v{latest} が利用可能")
+            QMessageBox.information(
+                self,
+                "Osakana アップデートが利用可能",
+                f"現在: {APP_VERSION}\n最新: {latest}\n\n"
+                f"リリースページからダウンロードしてください:\n{updater.release_url()}",
+            )
+        except Exception as exc:
+            self._app_update_status_label.setText("エラー")
             QMessageBox.critical(self, "アップデート確認エラー", str(exc))
