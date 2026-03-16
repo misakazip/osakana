@@ -7,7 +7,6 @@
 """
 from __future__ import annotations
 
-import os
 import shutil
 import stat
 import subprocess
@@ -57,7 +56,6 @@ _CONFIG_KEYS: Dict[str, str] = {
     "aria2c": "Aria2cPath",
 }
 
-LOCAL_BIN = Path.home() / ".local" / "bin"
 SYSTEM_BIN = Path("/usr/local/bin")
 
 ProgressCallback = Callable[[int], None]  # 0-100
