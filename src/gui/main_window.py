@@ -27,6 +27,8 @@ class MainWindow(QMainWindow):
         self._config = config
         self._bm = binary_manager
         self._task_titles: Dict[str, str] = {}
+        self._stats_total: int = 0
+        self._stats_done: int = 0
         self._setup_ui()
         self._setup_tray()
 
@@ -37,6 +39,7 @@ class MainWindow(QMainWindow):
     def _setup_ui(self) -> None:
         self.setWindowTitle("Osakana — yt-dlp GUI")
         self.resize(960, 660)
+        self.setMinimumSize(640, 480)
 
         self._tabs = QTabWidget()
         self.setCentralWidget(self._tabs)
@@ -102,27 +105,33 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _update_status(self, active: int, queued: int) -> None:
-        if active == 0 and queued == 0:
+        if active == 0 and queued == 0 and self._stats_total == 0:
             self._status_lbl.setText("待機中")
+        elif active == 0 and queued == 0:
+            self._status_lbl.setText(
+                f"完了: {self._stats_done} / {self._stats_total} 件"
+            )
         else:
             self._status_lbl.setText(
                 f"ダウンロード中: {active} 件  /  待機: {queued} 件"
+                f"  ({self._stats_done} / {self._stats_total} 完了)"
             )
 
     def _on_task_added(self, task: DownloadTask) -> None:
         self._task_titles[task.id] = task.url[:80]
+        self._stats_total += 1
 
     def _on_title_fetched(self, task_id: str, title: str) -> None:
         if title:
             self._task_titles[task_id] = title
 
     def _on_status_changed(self, task_id: str, status: str) -> None:
-        if status not in ("done", "failed"):
+        if status not in ("done", "failed", "cancelled"):
             return
-        if self._tray is None or not self._config.get("DesktopNotify"):
-            self._task_titles.pop(task_id, None)
-            return
+        self._stats_done += 1
         display = self._task_titles.pop(task_id, "")
+        if status == "cancelled" or self._tray is None or not self._config.get("DesktopNotify"):
+            return
         if status == "done":
             self._tray.showMessage(
                 "ダウンロード完了", display,

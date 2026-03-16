@@ -72,6 +72,9 @@ class QueueWidget(QTableWidget):
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setAlternatingRowColors(True)
 
+        self.setMinimumHeight(150)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
     # ------------------------------------------------------------------
     # 公開API
     # ------------------------------------------------------------------
