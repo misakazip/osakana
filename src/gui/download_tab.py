@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -93,6 +94,13 @@ class DownloadTab(QWidget):
 
         # キューとログは常時表示
         root.addWidget(scroll)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Plain)
+        sep.setStyleSheet("color: white;")
+        root.addWidget(sep)
+
         root.addWidget(self._build_queue_group())
         root.addWidget(self._build_raw_log_group())
 
