@@ -48,7 +48,6 @@ _PROGRESS_RE = re.compile(
     r"\[download\]\s+([\d.]+)%\s+of\s+[\d.~]+\S+"
     r"(?:\s+at\s+([\d.]+\S+)\s+ETA\s+(\S+))?"
 )
-_COMPLETE_RE = re.compile(r"\[download\]\s+100%")
 
 
 # ------------------------------------------------------------------
@@ -166,56 +165,62 @@ class DownloadWorker(QThread):
         ytdlp = self._config.get("YtdlpPath", "yt-dlp")
         cmd = [ytdlp, "--newline", "--progress", "--no-colors"]
 
-        if task.audio_only:
-            # Windows は Opus を再生できないため M4A (AAC) に自動変換する
-            audio_fmt = task.audio_format
-            if audio_fmt == "opus":
-                audio_fmt = "m4a"
-            cmd += ["-x", "--audio-format", audio_fmt, "--audio-quality", "0"]
-        else:
-            fmt = VIDEO_QUALITY_MAP.get(task.quality, "bestvideo+bestaudio/best")
-            cmd += ["-f", fmt, "--merge-output-format", task.container]
-            if task.convert_h265:
-                cmd += [
-                    "--postprocessor-args",
-                    "ffmpeg:-c:v libx265 -crf 28 -preset medium -c:a copy",
-                ]
-
-        if task.embed_subtitles and not task.audio_only:
-            sub_langs  = self._config.get("SubLangs", "ja,en") or "all,-live_chat"
-            sub_format = self._config.get("SubFormat", "srt")
-            cmd += ["--embed-subs", "--sub-langs", sub_langs,
-                    "--sub-format", sub_format]
-            # "--convert-subs" は ass/lrc/srt/vtt のみ有効。"best" には使えない
-            if sub_format != "best":
-                cmd += ["--convert-subs", sub_format]
-            if self._config.get("AutoSubs"):
-                cmd += ["--write-auto-subs"]
+        self._add_format_args(cmd, task)
+        self._add_subtitle_args(cmd, task)
 
         if not task.playlist:
             cmd += ["--no-playlist"]
 
         tpl = task.filename_template or "%(title)s [%(id)s].%(ext)s"
-        output_tpl = str(Path(task.output_dir) / tpl)
-        cmd += ["-o", output_tpl]
+        cmd += ["-o", str(Path(task.output_dir) / tpl)]
 
         if task.trim_start or task.trim_end:
             start = task.trim_start or "0"
             end   = task.trim_end   or "inf"
-            cmd += ["--download-sections", f"*{start}-{end}",
-                    "--force-keyframes-at-cuts"]
+            cmd += ["--download-sections", f"*{start}-{end}", "--force-keyframes-at-cuts"]
 
         if task.avoid_bot_detection:
-            cmd += [
-                "--rate-limit", "5M",
-                "--min-sleep-interval", "15",
-                "--max-sleep-interval", "45",
-            ]
+            cmd += ["--rate-limit", "5M", "--min-sleep-interval", "15", "--max-sleep-interval", "45"]
 
         if task.members_only:
             cmd += ["--match-filter", "availability=subscriber_only"]
 
-        # 後処理オプション（設定ページから）
+        self._add_postprocess_args(cmd, task)
+        self._add_download_ctrl_args(cmd)
+        self._add_network_args(cmd)
+
+        extra_args = self._config.get("ExtraArgs", "").strip()
+        if extra_args:
+            import shlex
+            cmd += shlex.split(extra_args)
+
+        cmd.append(task.url)
+        return cmd
+
+    def _add_format_args(self, cmd: List[str], task: "DownloadTask") -> None:
+        if task.audio_only:
+            # Windows は Opus を再生できないため M4A (AAC) に自動変換する
+            audio_fmt = task.audio_format if task.audio_format != "opus" else "m4a"
+            cmd += ["-x", "--audio-format", audio_fmt, "--audio-quality", "0"]
+        else:
+            fmt = VIDEO_QUALITY_MAP.get(task.quality, "bestvideo+bestaudio/best")
+            cmd += ["-f", fmt, "--merge-output-format", task.container]
+            if task.convert_h265:
+                cmd += ["--postprocessor-args", "ffmpeg:-c:v libx265 -crf 28 -preset medium -c:a copy"]
+
+    def _add_subtitle_args(self, cmd: List[str], task: "DownloadTask") -> None:
+        if not task.embed_subtitles or task.audio_only:
+            return
+        sub_langs  = self._config.get("SubLangs", "ja,en") or "all,-live_chat"
+        sub_format = self._config.get("SubFormat", "srt")
+        cmd += ["--embed-subs", "--sub-langs", sub_langs, "--sub-format", sub_format]
+        # "--convert-subs" は ass/lrc/srt/vtt のみ有効。"best" には使えない
+        if sub_format != "best":
+            cmd += ["--convert-subs", sub_format]
+        if self._config.get("AutoSubs"):
+            cmd += ["--write-auto-subs"]
+
+    def _add_postprocess_args(self, cmd: List[str], task: "DownloadTask") -> None:
         if self._config.get("EmbedThumbnail"):
             cmd += ["--embed-thumbnail"]
         if self._config.get("EmbedMetadata"):
@@ -225,39 +230,26 @@ class DownloadWorker(QThread):
         if sponsorblock and sponsorblock != "off" and not task.audio_only:
             cmd += ["--sponsorblock-remove", sponsorblock]
 
-        # ダウンロード制御（設定ページから）
+    def _add_download_ctrl_args(self, cmd: List[str]) -> None:
         speed_limit = self._config.get("SpeedLimit", "").strip()
         if speed_limit:
             cmd += ["--limit-rate", speed_limit]
-        retries = self._config.get("Retries", 10)
-        cmd += ["--retries", str(retries)]
+        cmd += ["--retries", str(self._config.get("Retries", 10))]
         archive = self._config.get("DownloadArchive", "").strip()
         if archive:
             cmd += ["--download-archive", archive]
 
-        # ネットワーク（設定ページから）
+    def _add_network_args(self, cmd: List[str]) -> None:
         proxy = self._config.get("Proxy", "").strip()
         if proxy:
             cmd += ["--proxy", proxy]
         cookies_browser = self._config.get("CookiesBrowser", "").strip()
         if cookies_browser:
             cmd += ["--cookies-from-browser", cookies_browser]
-
         if self._config.get("IsAria2cEnabled"):
             connections = self._config.get("Aria2cConnections", 16)
-            cmd += [
-                "--downloader", "aria2c",
-                "--downloader-args",
-                f"aria2c:-x {connections} -s {connections} -k 1M",
-            ]
-
-        extra_args = self._config.get("ExtraArgs", "").strip()
-        if extra_args:
-            import shlex
-            cmd += shlex.split(extra_args)
-
-        cmd.append(task.url)
-        return cmd
+            cmd += ["--downloader", "aria2c", "--downloader-args",
+                    f"aria2c:-x {connections} -s {connections} -k 1M"]
 
     def _build_env(self) -> dict:
         env = os.environ.copy()

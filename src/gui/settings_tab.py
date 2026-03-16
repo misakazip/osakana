@@ -512,6 +512,28 @@ class SettingsTab(QWidget):
 
     def _on_aria2c_toggled(self, checked: bool) -> None:
         self._aria2c_sub.setEnabled(checked)
+        if checked and not self._bm.find("aria2c"):
+            self._prompt_install_aria2c()
+
+    def _prompt_install_aria2c(self) -> None:
+        from core.platform_detector import detect as detect_platform
+        from gui.setup_wizard import SetupWizard
+
+        answer = QMessageBox.question(
+            self,
+            "aria2c が見つかりません",
+            "aria2c がインストールされていません。\n今すぐインストールしますか？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            wizard = SetupWizard(
+                missing=["aria2c"],
+                manager=self._bm,
+                config=self._config,
+                platform=detect_platform(),
+                parent=self,
+            )
+            wizard.exec()
 
     def _browse_binary(self, edit: QLineEdit) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "バイナリを選択", edit.text())
