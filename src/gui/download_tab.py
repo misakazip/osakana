@@ -443,14 +443,3 @@ class DownloadTab(QWidget):
             self._output_edit.setText(directory)
             self._config.set("OutputDirectory", directory)
 
-    # ------------------------------------------------------------------
-    # 公開ヘルパー（設定変更時に MainWindow から呼び出される）
-    # ------------------------------------------------------------------
-
-    def refresh_aria2c_visibility(self) -> None:
-        visible = bool(self._config.get("IsAria2cEnabled"))
-        self._aria2c_label.setVisible(visible)
-        self._aria2c_spin.setVisible(visible)
-
-    def refresh_ytdlp_path(self) -> None:
-        self._trim.set_ytdlp_path(self._config.get("YtdlpPath", "yt-dlp"))

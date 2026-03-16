@@ -51,6 +51,16 @@ def main() -> None:
     aria2c_path = binary_manager.find("aria2c")
     if aria2c_path:
         config.set("Aria2cPath", aria2c_path)
+    elif config.get("IsAria2cEnabled"):
+        # aria2c が有効設定なのに見つからない場合はインストールを促す
+        wizard = SetupWizard(
+            missing=["aria2c"],
+            manager=binary_manager,
+            config=config,
+            platform=platform_info,
+            parent=None,
+        )
+        wizard.exec()
 
     # ----------------------------------------------------------------
     # 自動アップデート確認（インタラクティブ）
