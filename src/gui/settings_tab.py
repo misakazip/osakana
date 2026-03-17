@@ -267,6 +267,19 @@ class SettingsTab(QWidget):
         sb_row.addStretch()
         layout.addLayout(sb_row)
 
+        hw_row = QHBoxLayout()
+        hw_row.addWidget(QLabel("ハードウェアエンコード (H.265):"))
+        self._hw_accel_combo = QComboBox()
+        self._hw_accel_combo.addItems([
+            "none（無効・ソフトウェア）",
+            "nvidia（NVENC）",
+            "amd（AMF）",
+            "intel（QSV）",
+        ])
+        hw_row.addWidget(self._hw_accel_combo)
+        hw_row.addStretch()
+        layout.addLayout(hw_row)
+
         return box
 
     # --- ネットワーク ---
@@ -416,6 +429,8 @@ class SettingsTab(QWidget):
 
     # SponsorBlock コンボのインデックス ↔ 設定値の対応
     _SB_VALUES = ["off", "sponsor", "default", "all"]
+    # HwAccel コンボのインデックス ↔ 設定値の対応
+    _HW_VALUES = ["none", "nvidia", "amd", "intel"]
 
     def _load_values(self) -> None:
         # 外観
@@ -448,6 +463,10 @@ class SettingsTab(QWidget):
         sb = self._config.get("SponsorBlock", "off")
         sb_idx = self._SB_VALUES.index(sb) if sb in self._SB_VALUES else 0
         self._sponsorblock_combo.setCurrentIndex(sb_idx)
+
+        hw = self._config.get("HwAccel", "none")
+        hw_idx = self._HW_VALUES.index(hw) if hw in self._HW_VALUES else 0
+        self._hw_accel_combo.setCurrentIndex(hw_idx)
 
         # ネットワーク
         self._proxy_edit.setText(self._config.get("Proxy", ""))
@@ -487,6 +506,7 @@ class SettingsTab(QWidget):
         self._max_dl_spin.valueChanged.connect(self._save)
         self._sub_format_combo.currentIndexChanged.connect(self._save)
         self._sponsorblock_combo.currentIndexChanged.connect(self._save)
+        self._hw_accel_combo.currentIndexChanged.connect(self._save)
         self._cookies_browser_combo.currentIndexChanged.connect(self._save)
         self._auto_subs_cb.toggled.connect(self._save)
         self._embed_thumbnail_cb.toggled.connect(self._save)
@@ -518,6 +538,7 @@ class SettingsTab(QWidget):
                 "EmbedThumbnail":       self._embed_thumbnail_cb.isChecked(),
                 "EmbedMetadata":        self._embed_metadata_cb.isChecked(),
                 "SponsorBlock":         self._SB_VALUES[self._sponsorblock_combo.currentIndex()],
+                "HwAccel":              self._HW_VALUES[self._hw_accel_combo.currentIndex()],
                 # ネットワーク
                 "Proxy":                self._proxy_edit.text().strip(),
                 "CookiesBrowser":       "" if browser == "なし" else browser,

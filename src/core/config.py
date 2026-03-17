@@ -42,6 +42,7 @@ DEFAULTS: Dict[str, Any] = {
     "Aria2cPath": "",
     "ExtraArgs": "",
     "IsDarkThemeEnabled": False,
+    "HwAccel": "none",
 }
 
 

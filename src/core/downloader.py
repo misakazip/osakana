@@ -206,7 +206,16 @@ class DownloadWorker(QThread):
             fmt = VIDEO_QUALITY_MAP.get(task.quality, "bestvideo+bestaudio/best")
             cmd += ["-f", fmt, "--merge-output-format", task.container]
             if task.convert_h265:
-                cmd += ["--postprocessor-args", "ffmpeg:-c:v libx265 -crf 28 -preset medium -c:a copy"]
+                hw = self._config.get("HwAccel", "none")
+                _HW_ENCODER = {
+                    "nvidia": "hevc_nvenc -rc vbr -cq 28 -preset p4",
+                    "amd":    "hevc_amf -quality balanced -qp_i 28 -qp_p 28",
+                    "intel":  "hevc_qsv -global_quality 28 -preset medium",
+                }
+                vcodec = _HW_ENCODER.get(hw, "libx265 -crf 28 -preset medium")
+                cmd += ["--postprocessor-args", f"ffmpeg:-c:v {vcodec} -c:a aac -b:a 192k"]
+            else:
+                cmd += ["--postprocessor-args", "ffmpeg:-c:v copy -c:a aac -b:a 192k"]
 
     def _add_subtitle_args(self, cmd: List[str], task: "DownloadTask") -> None:
         if not task.embed_subtitles or task.audio_only:
