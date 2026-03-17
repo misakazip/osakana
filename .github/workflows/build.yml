@@ -83,16 +83,71 @@ jobs:
         shell: bash
         run: mv "${{ matrix.src_path }}" "dist/${{ matrix.artifact }}"
 
+      # ── チェックサムの計算 ─────────────────────────────────────────────────────
+      - name: Compute checksum
+        shell: bash
+        run: |
+          cd dist
+          sha256sum "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256"
+          cat "${{ matrix.artifact }}.sha256"
+
       # ── アーティファクトのアップロード（毎回実行） ──────────────────────────────────────
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          path: |
+            dist/${{ matrix.artifact }}
+            dist/${{ matrix.artifact }}.sha256
 
       # ── GitHub Release へのアタッチ（タグプッシュ時のみ） ───────────────────
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ matrix.artifact }}
+          files: |
+            dist/${{ matrix.artifact }}
+            dist/${{ matrix.artifact }}.sha256
+
+  # ── リリースノートの更新（全ビルド完了後） ─────────────────────────────────────
+  finalize:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all checksum artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: "*.sha256"
+          merge-multiple: true
+          path: checksums
+
+      - name: Create combined checksums.txt
+        run: |
+          cat checksums/*.sha256 | sort > checksums.txt
+          cat checksums.txt
+
+      - name: Upload checksums.txt to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: checksums.txt
+
+      - name: Append build info to release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          CHECKSUMS=$(cat checksums.txt)
+          CURRENT_BODY=$(gh release view "$TAG" --json body --jq '.body')
+          gh release edit "$TAG" --notes "${CURRENT_BODY}
+
+          ## Build Information
+          **Actions Run:** ${RUN_URL}
+
+          ### SHA256 Checksums
+          \`\`\`
+          ${CHECKSUMS}
+          \`\`\`"
