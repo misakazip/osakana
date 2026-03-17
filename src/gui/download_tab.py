@@ -11,7 +11,6 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
-    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -91,11 +90,6 @@ class DownloadTab(QWidget):
         inner_layout.addLayout(self._build_action_row())
         inner_layout.addWidget(self._build_trim_widget())
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setFrameShadow(QFrame.Shadow.Plain)
-        sep.setStyleSheet("color: white;")
-        inner_layout.addWidget(sep)
 
         inner_layout.addWidget(self._build_queue_group())
         inner_layout.addWidget(self._build_raw_log_group())
