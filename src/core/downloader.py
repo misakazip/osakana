@@ -213,9 +213,9 @@ class DownloadWorker(QThread):
                     "intel":  "hevc_qsv -global_quality 28 -preset medium",
                 }
                 vcodec = _HW_ENCODER.get(hw, "libx265 -crf 28 -preset medium")
-                cmd += ["--postprocessor-args", f"ffmpeg:-c:v {vcodec} -c:a aac -b:a 192k"]
+                cmd += ["--postprocessor-args", f"Merger+ffmpeg:-c:v {vcodec} -c:a aac -b:a 192k"]
             else:
-                cmd += ["--postprocessor-args", "ffmpeg:-c:v copy -c:a aac -b:a 192k"]
+                cmd += ["--postprocessor-args", "Merger+ffmpeg:-c:v copy -c:a aac -b:a 192k"]
 
     def _add_subtitle_args(self, cmd: List[str], task: "DownloadTask") -> None:
         if not task.embed_subtitles or task.audio_only:
@@ -231,7 +231,7 @@ class DownloadWorker(QThread):
 
     def _add_postprocess_args(self, cmd: List[str], task: "DownloadTask") -> None:
         if self._config.get("EmbedThumbnail"):
-            cmd += ["--embed-thumbnail"]
+            cmd += ["--embed-thumbnail", "--convert-thumbnails", "jpg"]
         if self._config.get("EmbedMetadata"):
             cmd += ["--embed-metadata"]
         # SponsorBlock は映像の章マーカーと ffmpeg が必要なため音声のみ時はスキップ
