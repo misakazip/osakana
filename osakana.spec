@@ -102,9 +102,6 @@ a = Analysis(
         "PyQt6": {
             "qt_plugins": [
                 "platforms",          # xcb (Linux), windows (Win)
-                "imageformats",       # jpeg, png など
-                # "iconengines",  # SVG アイコン不使用のため除外
-                "styles",
                 "multimedia",         # 音声/動画バックエンド（Qt6 統合済み）
             ],
         },
