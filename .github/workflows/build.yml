@@ -96,9 +96,13 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
-          path: |
-            dist/${{ matrix.artifact }}
-            dist/${{ matrix.artifact }}.sha256
+          path: dist/${{ matrix.artifact }}
+
+      - name: Upload checksum artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}.sha256
+          path: dist/${{ matrix.artifact }}.sha256
 
       # ── GitHub Release へのアタッチ（タグプッシュ時のみ） ───────────────────
       - name: Upload to release
