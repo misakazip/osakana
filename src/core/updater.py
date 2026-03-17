@@ -14,7 +14,7 @@ _YTDLP_API = "https://pypi.org/pypi/yt-dlp/json"
 _OSAKANA_API = "https://api.github.com/repos/misakazip/osakana/releases/latest"
 
 # 現在のアプリバージョン（pyproject.toml の version と一致させる）
-APP_VERSION = "0.0.3"
+APP_VERSION = "0.0.4"
 
 
 def _parse_version(v: str) -> tuple[int, ...]:
