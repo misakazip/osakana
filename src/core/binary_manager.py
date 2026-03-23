@@ -4,6 +4,8 @@
   Windows : winget
   Linux   : yt-dlp/ffmpeg は curl（GitHubリリース）→ /usr/local/bin へ pkexec でインストール;
             aria2c はシステムパッケージマネージャ
+  macOS   : Homebrew（brew install）を使用;
+            brew が未インストールの場合はインストールコマンドを表示して終了
 """
 from __future__ import annotations
 
@@ -39,6 +41,13 @@ _DL_URLS: Dict[str, Dict[str, str]] = {
             "ffmpeg-master-latest-linuxarm64-gpl.tar.xz"
         ),
     },
+}
+
+# Homebrew パッケージ名
+_BREW_NAMES: Dict[str, str] = {
+    "yt-dlp": "yt-dlp",
+    "ffmpeg": "ffmpeg",
+    "aria2c": "aria2",
 }
 
 # winget パッケージID
@@ -96,8 +105,10 @@ class BinaryManager:
             return self._install_winget(name)
         if self._platform.is_linux:
             return self._install_linux(name, progress)
+        if self._platform.is_macos:
+            return self._install_macos(name, progress)
         raise RuntimeError(
-            f"自動インストールは Windows と Linux のみ対応しています（現在の OS: {self._platform.display_name}）。"
+            f"自動インストールは Windows、Linux、macOS のみ対応しています（現在の OS: {self._platform.display_name}）。"
             f"\n手動で {name} をインストールしてください。"
         )
 
@@ -233,6 +244,42 @@ class BinaryManager:
             return dest
         finally:
             tmp_path.unlink(missing_ok=True)
+
+    # ------------------------------------------------------------------
+    # macOS 用
+    # ------------------------------------------------------------------
+
+    def _install_macos(
+        self, name: str, progress: Optional[ProgressCallback]
+    ) -> Optional[str]:
+        """macOS 向けインストール。Homebrew が必要。未インストール時はコマンドを表示して終了。"""
+        brew = shutil.which("brew")
+        if not brew:
+            raise RuntimeError(
+                "Homebrew（brew）が見つかりません。\n"
+                "以下のコマンドをターミナルに貼り付けて Homebrew をインストールしてください:\n\n"
+                '/bin/bash -c "$(curl -fsSL'
+                " https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n\n"
+                "インストール後、アプリを再起動して再度セットアップを実行してください。"
+            )
+        return self._brew_install(name, brew)
+
+    def _brew_install(self, name: str, brew: str) -> Optional[str]:
+        """brew install <package> を実行してバイナリをインストールする。"""
+        pkg = _BREW_NAMES.get(name)
+        if not pkg:
+            raise ValueError(f"Homebrew パッケージが不明です: {name}")
+        result = subprocess.run(
+            [brew, "install", pkg],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr or result.stdout)
+        path = shutil.which(name)
+        if path:
+            self._config.set(_CONFIG_KEYS[name], path)
+        return path
 
     def _pkg_manager(self, package: str) -> Optional[List[str]]:
         """インストールに使えるパッケージマネージャを検出し、コマンドを返す。
