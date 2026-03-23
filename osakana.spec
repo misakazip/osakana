@@ -101,8 +101,9 @@ a = Analysis(
         # Qt フックを必要なプラグインのみに制限する
         "PyQt6": {
             "qt_plugins": [
-                "platforms",          # xcb (Linux), windows (Win)
+                "platforms",          # xcb (Linux), windows (Win), cocoa (macOS)
                 "multimedia",         # 音声/動画バックエンド（Qt6 統合済み）
+                "styles",             # macOS ネイティブスタイル
             ],
         },
     },
@@ -123,10 +124,10 @@ exe = EXE(
     name="osakana",
     debug=False,
     bootloader_ignore_signals=False,
-    # ELF デバッグシンボルを削除する — Linux で大幅なサイズ削減
+    # ELF / Mach-O デバッグシンボルを削除する — Linux / macOS で大幅なサイズ削減
     strip=(sys.platform != "win32"),
-    # PATH に UPX があれば圧縮する（30〜50% 削減）
-    upx=True,
+    # UPX 圧縮: macOS の Mach-O バイナリには UPX が非対応のため無効化
+    upx=(sys.platform != "darwin"),
     upx_exclude=[
         # UPX が破損させる可能性のある DLL を除外
         "vcruntime140.dll",
@@ -137,6 +138,10 @@ exe = EXE(
     # GUIアプリのためコンソール / コマンドウィンドウを表示しない
     console=False,
     disable_windowed_traceback=False,
-    argv_emulation=False,
+    # macOS .app バンドルでのドラッグ＆ドロップ対応
+    argv_emulation=(sys.platform == "darwin"),
     target_arch=None,
+    # macOS コード署名（未署名の場合は None）
+    codesign_identity=None,
+    entitlements_file=None,
 )
