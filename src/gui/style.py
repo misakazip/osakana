@@ -1,612 +1,384 @@
-"""アプリケーション全体で使用する QSS スタイルシート（ダーク / ライト）。"""
+# アプリケーション全体で使用する QSS スタイルシート。
+#
+# ダーク (Catppuccin Mocha) とライト (Catppuccin Latte) の 2 種類を提供する。
+# 両テーマは同じ構造の QSS テンプレートに Palette を当てはめて生成するため、
+# 配色を変更したい場合はパレット定義のみを編集すればよい。
+from __future__ import annotations
 
-# ── Catppuccin Mocha（ダーク） ────────────────────────────────────────────
-DARK_STYLE = """
+from dataclasses import dataclass
+
+
+# ─────────────────────────────────────────────────────────────────────
+# パレット定義
+# ─────────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class Palette:
+    # テーマカラーの集合。Catppuccin の命名規則に準ずる。
+
+    base: str            # ウィンドウ / ダイアログ背景
+    mantle: str          # 入力欄など 1 段沈んだ背景
+    surface0: str        # ボタン背景・罫線・代替行
+    surface1: str        # ボタン罫線・hover・スクロール
+    surface2: str        # disabled テキスト・スクロール hover
+    text: str            # 主テキスト
+    subtext: str         # 補助テキスト
+    accent: str          # 強調色 (フォーカス・選択・タブ)
+    accent_hover: str    # 強調色 hover
+    accent_pressed: str  # 強調色 pressed
+    group: str           # GroupBox タイトル / インジケータ
+    progress: str        # プログレスバー chunk
+
+
+# Catppuccin Mocha (ダーク)
+_MOCHA = Palette(
+    base="#1e1e2e",
+    mantle="#181825",
+    surface0="#313244",
+    surface1="#45475a",
+    surface2="#585b70",
+    text="#cdd6f4",
+    subtext="#a6adc8",
+    accent="#cba6f7",
+    accent_hover="#d0b4fb",
+    accent_pressed="#b58df5",
+    group="#a6e3a1",
+    progress="#89b4fa",
+)
+
+# Catppuccin Latte (ライト)
+_LATTE = Palette(
+    base="#eff1f5",
+    mantle="#e6e9ef",
+    surface0="#ccd0da",
+    surface1="#bcc0cc",
+    surface2="#acb0be",
+    text="#4c4f69",
+    subtext="#6c6f85",
+    accent="#8839ef",
+    accent_hover="#7527d7",
+    accent_pressed="#6516bf",
+    group="#40a02b",
+    progress="#1e66f5",
+)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# QSS テンプレート
+# ─────────────────────────────────────────────────────────────────────
+
+def _render(p: Palette) -> str:
+    # パレットを QSS テンプレートに当てはめて文字列を生成する。
+    return f"""
 /* ── ベース ─────────────────────────────────────────────── */
-QWidget {
-    background-color: #1e1e2e;
-    color: #cdd6f4;
+QWidget {{
+    background-color: {p.base};
+    color: {p.text};
     font-family: "Segoe UI", "Noto Sans JP", sans-serif;
     font-size: 10pt;
-}
+}}
 
 /* ── ウィンドウ / ダイアログ ────────────────────────────────── */
-QMainWindow, QDialog {
-    background-color: #1e1e2e;
-}
+QMainWindow, QDialog {{
+    background-color: {p.base};
+}}
 
 /* ── タブウィジェット ─────────────────────────────────────── */
-QTabWidget::pane {
-    border: 1px solid #313244;
+QTabWidget::pane {{
+    border: 1px solid {p.surface0};
     border-radius: 6px;
-    background-color: #1e1e2e;
-}
-QTabBar::tab {
-    background-color: #181825;
-    color: #a6adc8;
+    background-color: {p.base};
+}}
+QTabBar::tab {{
+    background-color: {p.mantle};
+    color: {p.subtext};
     padding: 8px 20px;
-    border: 1px solid #313244;
+    border: 1px solid {p.surface0};
     border-bottom: none;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
     min-width: 80px;
-}
-QTabBar::tab:selected {
-    background-color: #1e1e2e;
-    color: #cba6f7;
-    border-bottom: 2px solid #cba6f7;
-}
-QTabBar::tab:hover:!selected {
-    background-color: #313244;
-    color: #cdd6f4;
-}
+}}
+QTabBar::tab:selected {{
+    background-color: {p.base};
+    color: {p.accent};
+    border-bottom: 2px solid {p.accent};
+}}
+QTabBar::tab:hover:!selected {{
+    background-color: {p.surface0};
+    color: {p.text};
+}}
 
 /* ── ボタン ──────────────────────────────────────────────── */
-QPushButton {
-    background-color: #313244;
-    color: #cdd6f4;
-    border: 1px solid #45475a;
+QPushButton {{
+    background-color: {p.surface0};
+    color: {p.text};
+    border: 1px solid {p.surface1};
     border-radius: 6px;
     padding: 5px 14px;
     min-height: 24px;
-}
-QPushButton:hover {
-    background-color: #45475a;
-    border-color: #cba6f7;
-    color: #cba6f7;
-}
-QPushButton:pressed {
-    background-color: #cba6f7;
-    color: #1e1e2e;
-}
-QPushButton:disabled {
-    background-color: #1e1e2e;
-    color: #585b70;
-    border-color: #313244;
-}
-QPushButton[primary="true"] {
-    background-color: #cba6f7;
-    color: #1e1e2e;
+}}
+QPushButton:hover {{
+    background-color: {p.surface1};
+    border-color: {p.accent};
+    color: {p.accent};
+}}
+QPushButton:pressed {{
+    background-color: {p.accent};
+    color: {p.base};
+}}
+QPushButton:disabled {{
+    background-color: {p.base};
+    color: {p.surface2};
+    border-color: {p.surface0};
+}}
+QPushButton[primary="true"] {{
+    background-color: {p.accent};
+    color: {p.base};
     border: none;
     font-weight: bold;
-}
-QPushButton[primary="true"]:hover {
-    background-color: #d0b4fb;
-}
-QPushButton[primary="true"]:pressed {
-    background-color: #b58df5;
-}
+}}
+QPushButton[primary="true"]:hover {{
+    background-color: {p.accent_hover};
+}}
+QPushButton[primary="true"]:pressed {{
+    background-color: {p.accent_pressed};
+}}
 
 /* ── テーマ切替ボタン ────────────────────────────────────── */
-QPushButton[theme-toggle="true"] {
+QPushButton[theme-toggle="true"] {{
     background-color: transparent;
     border: none;
     font-size: 16pt;
     padding: 0px 4px;
     min-height: 0;
     min-width: 0;
-}
-QPushButton[theme-toggle="true"]:hover {
-    background-color: #313244;
+}}
+QPushButton[theme-toggle="true"]:hover {{
+    background-color: {p.surface0};
     border: none;
-    color: #cdd6f4;
-}
-QPushButton[theme-toggle="true"]:pressed {
-    background-color: #45475a;
-}
+    color: {p.text};
+}}
+QPushButton[theme-toggle="true"]:pressed {{
+    background-color: {p.surface1};
+}}
 
 /* ── 入力フィールド ──────────────────────────────────────── */
-QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox {
-    background-color: #181825;
-    color: #cdd6f4;
-    border: 1px solid #45475a;
+QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox {{
+    background-color: {p.mantle};
+    color: {p.text};
+    border: 1px solid {p.surface1};
     border-radius: 6px;
     padding: 4px 8px;
-    selection-background-color: #cba6f7;
-    selection-color: #1e1e2e;
-}
+    selection-background-color: {p.accent};
+    selection-color: {p.base};
+}}
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus,
-QSpinBox:focus, QDoubleSpinBox:focus {
-    border-color: #cba6f7;
-}
-QLineEdit:disabled {
-    background-color: #1e1e2e;
-    color: #585b70;
-}
+QSpinBox:focus, QDoubleSpinBox:focus {{
+    border-color: {p.accent};
+}}
+QLineEdit:disabled {{
+    background-color: {p.base};
+    color: {p.surface2};
+}}
 
 /* ── コンボボックス ──────────────────────────────────────── */
-QComboBox {
-    background-color: #181825;
-    color: #cdd6f4;
-    border: 1px solid #45475a;
+QComboBox {{
+    background-color: {p.mantle};
+    color: {p.text};
+    border: 1px solid {p.surface1};
     border-radius: 6px;
     padding: 4px 8px;
     min-height: 24px;
-}
-QComboBox:hover { border-color: #cba6f7; }
-QComboBox:focus { border-color: #cba6f7; }
-QComboBox::drop-down {
+}}
+QComboBox:hover {{ border-color: {p.accent}; }}
+QComboBox:focus {{ border-color: {p.accent}; }}
+QComboBox::drop-down {{
     border: none;
     width: 20px;
-}
-QComboBox::down-arrow {
+}}
+QComboBox::down-arrow {{
     width: 10px;
     height: 10px;
     border: none;
-}
-QComboBox QAbstractItemView {
-    background-color: #181825;
-    color: #cdd6f4;
-    border: 1px solid #45475a;
+}}
+QComboBox QAbstractItemView {{
+    background-color: {p.mantle};
+    color: {p.text};
+    border: 1px solid {p.surface1};
     border-radius: 4px;
-    selection-background-color: #313244;
-    selection-color: #cba6f7;
-}
+    selection-background-color: {p.surface0};
+    selection-color: {p.accent};
+}}
 
 /* ── チェックボックス / ラジオボタン ─────────────────────── */
-QCheckBox, QRadioButton {
-    color: #cdd6f4;
+QCheckBox, QRadioButton {{
+    color: {p.text};
     spacing: 8px;
-}
-QCheckBox::indicator, QRadioButton::indicator {
+}}
+QCheckBox::indicator, QRadioButton::indicator {{
     width: 16px;
     height: 16px;
-    border: 2px solid #45475a;
+    border: 2px solid {p.surface1};
     border-radius: 3px;
-    background-color: #181825;
-}
-QRadioButton::indicator { border-radius: 8px; }
-QCheckBox::indicator:checked, QRadioButton::indicator:checked {
-    background-color: #cba6f7;
-    border-color: #cba6f7;
-}
-QCheckBox::indicator:hover, QRadioButton::indicator:hover {
-    border-color: #cba6f7;
-}
+    background-color: {p.mantle};
+}}
+QRadioButton::indicator {{ border-radius: 8px; }}
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
+    background-color: {p.accent};
+    border-color: {p.accent};
+}}
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {{
+    border-color: {p.accent};
+}}
 
 /* ── グループボックス ────────────────────────────────────── */
-QGroupBox {
-    border: 1px solid #313244;
+QGroupBox {{
+    border: 1px solid {p.surface0};
     border-radius: 8px;
     margin-top: 12px;
     padding-top: 8px;
     font-weight: bold;
-    color: #a6e3a1;
-}
-QGroupBox::title {
+    color: {p.group};
+}}
+QGroupBox::title {{
     subcontrol-origin: margin;
     left: 10px;
     padding: 0 6px;
-    color: #a6e3a1;
-}
-QGroupBox::indicator {
+    color: {p.group};
+}}
+QGroupBox::indicator {{
     width: 16px;
     height: 16px;
-    border: 2px solid #45475a;
+    border: 2px solid {p.surface1};
     border-radius: 3px;
-    background-color: #181825;
-}
-QGroupBox::indicator:checked {
-    background-color: #a6e3a1;
-    border-color: #a6e3a1;
-}
+    background-color: {p.mantle};
+}}
+QGroupBox::indicator:checked {{
+    background-color: {p.group};
+    border-color: {p.group};
+}}
 
 /* ── スライダー ──────────────────────────────────────────── */
-QSlider::groove:horizontal {
+QSlider::groove:horizontal {{
     height: 4px;
-    background-color: #313244;
+    background-color: {p.surface0};
     border-radius: 2px;
-}
-QSlider::sub-page:horizontal {
-    background-color: #cba6f7;
+}}
+QSlider::sub-page:horizontal {{
+    background-color: {p.accent};
     border-radius: 2px;
-}
-QSlider::handle:horizontal {
-    background-color: #cba6f7;
+}}
+QSlider::handle:horizontal {{
+    background-color: {p.accent};
     width: 14px;
     height: 14px;
     margin: -5px 0;
     border-radius: 7px;
-}
-QSlider::handle:horizontal:hover {
-    background-color: #d0b4fb;
-}
+}}
+QSlider::handle:horizontal:hover {{
+    background-color: {p.accent_hover};
+}}
 
 /* ── プログレスバー ──────────────────────────────────────── */
-QProgressBar {
-    background-color: #313244;
+QProgressBar {{
+    background-color: {p.surface0};
     border: none;
     border-radius: 4px;
     text-align: center;
-    color: #cdd6f4;
+    color: {p.text};
     font-size: 9pt;
-}
-QProgressBar::chunk {
-    background-color: #89b4fa;
+}}
+QProgressBar::chunk {{
+    background-color: {p.progress};
     border-radius: 4px;
-}
+}}
 
 /* ── スクロールバー ──────────────────────────────────────── */
-QScrollBar:vertical {
-    background-color: #181825;
+QScrollBar:vertical {{
+    background-color: {p.mantle};
     width: 10px;
     border-radius: 5px;
-}
-QScrollBar::handle:vertical {
-    background-color: #45475a;
+}}
+QScrollBar::handle:vertical {{
+    background-color: {p.surface1};
     border-radius: 5px;
     min-height: 20px;
-}
-QScrollBar::handle:vertical:hover { background-color: #585b70; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QScrollBar:horizontal {
-    background-color: #181825;
+}}
+QScrollBar::handle:vertical:hover {{ background-color: {p.surface2}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar:horizontal {{
+    background-color: {p.mantle};
     height: 10px;
     border-radius: 5px;
-}
-QScrollBar::handle:horizontal {
-    background-color: #45475a;
+}}
+QScrollBar::handle:horizontal {{
+    background-color: {p.surface1};
     border-radius: 5px;
     min-width: 20px;
-}
-QScrollBar::handle:horizontal:hover { background-color: #585b70; }
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+}}
+QScrollBar::handle:horizontal:hover {{ background-color: {p.surface2}; }}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 
 /* ── テーブル ────────────────────────────────────────────── */
-QTableWidget {
-    background-color: #181825;
-    color: #cdd6f4;
-    gridline-color: #313244;
-    border: 1px solid #313244;
+QTableWidget {{
+    background-color: {p.mantle};
+    color: {p.text};
+    gridline-color: {p.surface0};
+    border: 1px solid {p.surface0};
     border-radius: 6px;
-    alternate-background-color: #1e1e2e;
-}
-QTableWidget::item:selected {
-    background-color: #313244;
-    color: #cdd6f4;
-}
-QHeaderView::section {
-    background-color: #181825;
-    color: #a6adc8;
+    alternate-background-color: {p.base};
+}}
+QTableWidget::item:selected {{
+    background-color: {p.surface0};
+    color: {p.text};
+}}
+QHeaderView::section {{
+    background-color: {p.mantle};
+    color: {p.subtext};
     border: none;
-    border-bottom: 1px solid #313244;
+    border-bottom: 1px solid {p.surface0};
     padding: 6px 8px;
     font-weight: bold;
-}
+}}
 
 /* ── ステータスバー ──────────────────────────────────────── */
-QStatusBar {
-    background-color: #181825;
-    color: #a6adc8;
-    border-top: 1px solid #313244;
-}
+QStatusBar {{
+    background-color: {p.mantle};
+    color: {p.subtext};
+    border-top: 1px solid {p.surface0};
+}}
 
 /* ── ラベル ──────────────────────────────────────────────── */
-QLabel {
-    color: #cdd6f4;
-}
+QLabel {{
+    color: {p.text};
+}}
 
 /* ── ツールチップ ────────────────────────────────────────── */
-QToolTip {
-    background-color: #313244;
-    color: #cdd6f4;
-    border: 1px solid #45475a;
+QToolTip {{
+    background-color: {p.surface0};
+    color: {p.text};
+    border: 1px solid {p.surface1};
     border-radius: 4px;
     padding: 4px 8px;
-}
+}}
 
 /* ── メッセージボックス ──────────────────────────────────── */
-QMessageBox {
-    background-color: #1e1e2e;
-}
-QMessageBox QLabel {
-    color: #cdd6f4;
-}
+QMessageBox {{
+    background-color: {p.base};
+}}
+QMessageBox QLabel {{
+    color: {p.text};
+}}
 """
 
-# ── Catppuccin Latte（ライト） ────────────────────────────────────────────
-LIGHT_STYLE = """
-/* ── ベース ─────────────────────────────────────────────── */
-QWidget {
-    background-color: #eff1f5;
-    color: #4c4f69;
-    font-family: "Segoe UI", "Noto Sans JP", sans-serif;
-    font-size: 10pt;
-}
 
-/* ── ウィンドウ / ダイアログ ────────────────────────────────── */
-QMainWindow, QDialog {
-    background-color: #eff1f5;
-}
+# ─────────────────────────────────────────────────────────────────────
+# 公開定数
+# ─────────────────────────────────────────────────────────────────────
 
-/* ── タブウィジェット ─────────────────────────────────────── */
-QTabWidget::pane {
-    border: 1px solid #ccd0da;
-    border-radius: 6px;
-    background-color: #eff1f5;
-}
-QTabBar::tab {
-    background-color: #e6e9ef;
-    color: #6c6f85;
-    padding: 8px 20px;
-    border: 1px solid #ccd0da;
-    border-bottom: none;
-    border-top-left-radius: 6px;
-    border-top-right-radius: 6px;
-    min-width: 80px;
-}
-QTabBar::tab:selected {
-    background-color: #eff1f5;
-    color: #8839ef;
-    border-bottom: 2px solid #8839ef;
-}
-QTabBar::tab:hover:!selected {
-    background-color: #ccd0da;
-    color: #4c4f69;
-}
-
-/* ── ボタン ──────────────────────────────────────────────── */
-QPushButton {
-    background-color: #ccd0da;
-    color: #4c4f69;
-    border: 1px solid #bcc0cc;
-    border-radius: 6px;
-    padding: 5px 14px;
-    min-height: 24px;
-}
-QPushButton:hover {
-    background-color: #bcc0cc;
-    border-color: #8839ef;
-    color: #8839ef;
-}
-QPushButton:pressed {
-    background-color: #8839ef;
-    color: #eff1f5;
-}
-QPushButton:disabled {
-    background-color: #eff1f5;
-    color: #acb0be;
-    border-color: #ccd0da;
-}
-QPushButton[primary="true"] {
-    background-color: #8839ef;
-    color: #eff1f5;
-    border: none;
-    font-weight: bold;
-}
-QPushButton[primary="true"]:hover {
-    background-color: #7527d7;
-}
-QPushButton[primary="true"]:pressed {
-    background-color: #6516bf;
-}
-
-/* ── テーマ切替ボタン ────────────────────────────────────── */
-QPushButton[theme-toggle="true"] {
-    background-color: transparent;
-    border: none;
-    font-size: 16pt;
-    padding: 0px 4px;
-    min-height: 0;
-    min-width: 0;
-}
-QPushButton[theme-toggle="true"]:hover {
-    background-color: #ccd0da;
-    border: none;
-    color: #4c4f69;
-}
-QPushButton[theme-toggle="true"]:pressed {
-    background-color: #bcc0cc;
-}
-
-/* ── 入力フィールド ──────────────────────────────────────── */
-QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox {
-    background-color: #e6e9ef;
-    color: #4c4f69;
-    border: 1px solid #bcc0cc;
-    border-radius: 6px;
-    padding: 4px 8px;
-    selection-background-color: #8839ef;
-    selection-color: #eff1f5;
-}
-QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus,
-QSpinBox:focus, QDoubleSpinBox:focus {
-    border-color: #8839ef;
-}
-QLineEdit:disabled {
-    background-color: #eff1f5;
-    color: #acb0be;
-}
-
-/* ── コンボボックス ──────────────────────────────────────── */
-QComboBox {
-    background-color: #e6e9ef;
-    color: #4c4f69;
-    border: 1px solid #bcc0cc;
-    border-radius: 6px;
-    padding: 4px 8px;
-    min-height: 24px;
-}
-QComboBox:hover { border-color: #8839ef; }
-QComboBox:focus { border-color: #8839ef; }
-QComboBox::drop-down {
-    border: none;
-    width: 20px;
-}
-QComboBox::down-arrow {
-    width: 10px;
-    height: 10px;
-    border: none;
-}
-QComboBox QAbstractItemView {
-    background-color: #e6e9ef;
-    color: #4c4f69;
-    border: 1px solid #bcc0cc;
-    border-radius: 4px;
-    selection-background-color: #ccd0da;
-    selection-color: #8839ef;
-}
-
-/* ── チェックボックス / ラジオボタン ─────────────────────── */
-QCheckBox, QRadioButton {
-    color: #4c4f69;
-    spacing: 8px;
-}
-QCheckBox::indicator, QRadioButton::indicator {
-    width: 16px;
-    height: 16px;
-    border: 2px solid #bcc0cc;
-    border-radius: 3px;
-    background-color: #e6e9ef;
-}
-QRadioButton::indicator { border-radius: 8px; }
-QCheckBox::indicator:checked, QRadioButton::indicator:checked {
-    background-color: #8839ef;
-    border-color: #8839ef;
-}
-QCheckBox::indicator:hover, QRadioButton::indicator:hover {
-    border-color: #8839ef;
-}
-
-/* ── グループボックス ────────────────────────────────────── */
-QGroupBox {
-    border: 1px solid #ccd0da;
-    border-radius: 8px;
-    margin-top: 12px;
-    padding-top: 8px;
-    font-weight: bold;
-    color: #40a02b;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 6px;
-    color: #40a02b;
-}
-QGroupBox::indicator {
-    width: 16px;
-    height: 16px;
-    border: 2px solid #bcc0cc;
-    border-radius: 3px;
-    background-color: #e6e9ef;
-}
-QGroupBox::indicator:checked {
-    background-color: #40a02b;
-    border-color: #40a02b;
-}
-
-/* ── スライダー ──────────────────────────────────────────── */
-QSlider::groove:horizontal {
-    height: 4px;
-    background-color: #ccd0da;
-    border-radius: 2px;
-}
-QSlider::sub-page:horizontal {
-    background-color: #8839ef;
-    border-radius: 2px;
-}
-QSlider::handle:horizontal {
-    background-color: #8839ef;
-    width: 14px;
-    height: 14px;
-    margin: -5px 0;
-    border-radius: 7px;
-}
-QSlider::handle:horizontal:hover {
-    background-color: #7527d7;
-}
-
-/* ── プログレスバー ──────────────────────────────────────── */
-QProgressBar {
-    background-color: #ccd0da;
-    border: none;
-    border-radius: 4px;
-    text-align: center;
-    color: #4c4f69;
-    font-size: 9pt;
-}
-QProgressBar::chunk {
-    background-color: #1e66f5;
-    border-radius: 4px;
-}
-
-/* ── スクロールバー ──────────────────────────────────────── */
-QScrollBar:vertical {
-    background-color: #e6e9ef;
-    width: 10px;
-    border-radius: 5px;
-}
-QScrollBar::handle:vertical {
-    background-color: #bcc0cc;
-    border-radius: 5px;
-    min-height: 20px;
-}
-QScrollBar::handle:vertical:hover { background-color: #acb0be; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QScrollBar:horizontal {
-    background-color: #e6e9ef;
-    height: 10px;
-    border-radius: 5px;
-}
-QScrollBar::handle:horizontal {
-    background-color: #bcc0cc;
-    border-radius: 5px;
-    min-width: 20px;
-}
-QScrollBar::handle:horizontal:hover { background-color: #acb0be; }
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
-
-/* ── テーブル ────────────────────────────────────────────── */
-QTableWidget {
-    background-color: #e6e9ef;
-    color: #4c4f69;
-    gridline-color: #ccd0da;
-    border: 1px solid #ccd0da;
-    border-radius: 6px;
-    alternate-background-color: #eff1f5;
-}
-QTableWidget::item:selected {
-    background-color: #ccd0da;
-    color: #4c4f69;
-}
-QHeaderView::section {
-    background-color: #e6e9ef;
-    color: #6c6f85;
-    border: none;
-    border-bottom: 1px solid #ccd0da;
-    padding: 6px 8px;
-    font-weight: bold;
-}
-
-/* ── ステータスバー ──────────────────────────────────────── */
-QStatusBar {
-    background-color: #e6e9ef;
-    color: #6c6f85;
-    border-top: 1px solid #ccd0da;
-}
-
-/* ── ラベル ──────────────────────────────────────────────── */
-QLabel {
-    color: #4c4f69;
-}
-
-/* ── ツールチップ ────────────────────────────────────────── */
-QToolTip {
-    background-color: #ccd0da;
-    color: #4c4f69;
-    border: 1px solid #bcc0cc;
-    border-radius: 4px;
-    padding: 4px 8px;
-}
-
-/* ── メッセージボックス ──────────────────────────────────── */
-QMessageBox {
-    background-color: #eff1f5;
-}
-QMessageBox QLabel {
-    color: #4c4f69;
-}
-"""
+DARK_STYLE = _render(_MOCHA)
+LIGHT_STYLE = _render(_LATTE)
 
 # 後方互換エイリアス
 STYLE = DARK_STYLE

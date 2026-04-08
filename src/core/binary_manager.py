@@ -1,12 +1,13 @@
-"""yt-dlp、ffmpeg、aria2c バイナリの確認とインストールを行う。
-
-インストール方式:
-  Windows : winget
-  Linux   : yt-dlp/ffmpeg は curl（GitHubリリース）→ /usr/local/bin へ pkexec でインストール;
-            aria2c はシステムパッケージマネージャ
-  macOS   : Homebrew（brew install）を使用;
-            brew が未インストールの場合はインストールコマンドを表示して終了
-"""
+# yt-dlp / ffmpeg / aria2c バイナリの検出とインストールを行う。
+#
+# 設計方針:
+#
+# * yt-dlp と ffmpeg は GitHub Releases などから直接ダウンロードし、
+#   ``~/.osakana/bin/`` 配下に保存する。アプリは常にこのローカルコピーを呼び出す。
+# * aria2c はオプション機能のため、既存のシステム流儀に従う:
+#     - Windows : winget
+#     - Linux   : pkexec + パッケージマネージャ
+#     - macOS   : Homebrew
 from __future__ import annotations
 
 import shutil
@@ -14,6 +15,7 @@ import stat
 import subprocess
 import tarfile
 import tempfile
+import zipfile
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
@@ -22,77 +24,140 @@ import requests
 from .config import Config
 from .platform_detector import PlatformInfo
 
+# ─────────────────────────────────────────────────────────────────────
+# 定数
+# ─────────────────────────────────────────────────────────────────────
+
 # アプリの動作に必須のバイナリ
-REQUIRED = ["yt-dlp", "ffmpeg"]
+REQUIRED: List[str] = ["yt-dlp", "ffmpeg"]
 
-# Linux 向けの直接ダウンロードURL（curl）
-_DL_URLS: Dict[str, Dict[str, str]] = {
-    "yt-dlp": {
-        "x86_64": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp",
-        "aarch64": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64",
-    },
-    "ffmpeg": {
-        "x86_64": (
-            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/"
-            "ffmpeg-master-latest-linux64-gpl.tar.xz"
-        ),
-        "aarch64": (
-            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/"
-            "ffmpeg-master-latest-linuxarm64-gpl.tar.xz"
-        ),
-    },
-}
+# Osakana がローカル管理するバイナリ。これらは常に INSTALL_DIR から呼び出す。
+_MANAGED = frozenset({"yt-dlp", "ffmpeg"})
 
-# Homebrew パッケージ名
-_BREW_NAMES: Dict[str, str] = {
-    "yt-dlp": "yt-dlp",
-    "ffmpeg": "ffmpeg",
-    "aria2c": "aria2",
-}
+# ローカルインストール先 (~/.osakana/bin)
+INSTALL_DIR: Path = Path.home() / ".osakana" / "bin"
 
-# winget パッケージID
-_WINGET_IDS: Dict[str, str] = {
-    "yt-dlp": "yt-dlp.yt-dlp",
-    "ffmpeg": "Gyan.FFmpeg",
-    "aria2c": "aria2.aria2",
-}
+# ffmpeg バイナリ (Windows と Linux) を提供する BtbN ビルドのベース URL
+_BTBN_BASE = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/"
 
+# yt-dlp 公式リリースのベース URL
+_YTDLP_BASE = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
+
+# Homebrew パッケージ名 (aria2c のみ使用)
+_BREW_NAMES: Dict[str, str] = {"aria2c": "aria2"}
+
+# winget パッケージ ID (aria2c のみ使用)
+_WINGET_IDS: Dict[str, str] = {"aria2c": "aria2.aria2"}
+
+# 設定ファイルのキー
 _CONFIG_KEYS: Dict[str, str] = {
     "yt-dlp": "YtdlpPath",
     "ffmpeg": "FfmpegPath",
     "aria2c": "Aria2cPath",
 }
 
-SYSTEM_BIN = Path("/usr/local/bin")
+# Linux で aria2 をインストールできるパッケージマネージャ候補
+_LINUX_PKG_MANAGERS: List[List[str]] = [
+    ["apt-get", "install", "-y", "aria2"],
+    ["dnf",     "install", "-y", "aria2"],
+    ["pacman",  "-S", "--noconfirm", "aria2"],
+    ["zypper",  "install", "-y", "aria2"],
+]
 
-ProgressCallback = Callable[[int], None]  # 0-100
+# 進捗コールバック (0–100)
+ProgressCallback = Callable[[int], None]
 
+
+# ─────────────────────────────────────────────────────────────────────
+# URL / ローカルパス決定
+# ─────────────────────────────────────────────────────────────────────
+
+def _ytdlp_url(platform: PlatformInfo) -> str:
+    # プラットフォーム別のシングルバイナリ配布物
+    if platform.is_windows:
+        return _YTDLP_BASE + "yt-dlp.exe"
+    if platform.is_macos:
+        return _YTDLP_BASE + "yt-dlp_macos"
+    if platform.is_linux:
+        return _YTDLP_BASE + ("yt-dlp_linux_aarch64" if platform.is_arm64 else "yt-dlp")
+    raise RuntimeError(
+        f"yt-dlp の配布物はこの OS には用意されていません: {platform.display_name}"
+    )
+
+
+def _ffmpeg_url(platform: PlatformInfo) -> str:
+    # Windows: BtbN gpl ビルド (zip)
+    if platform.is_windows:
+        suffix = "winarm64-gpl.zip" if platform.is_arm64 else "win64-gpl.zip"
+        return _BTBN_BASE + f"ffmpeg-master-latest-{suffix}"
+
+    # Linux: BtbN gpl ビルド (tar.xz)
+    if platform.is_linux:
+        suffix = "linuxarm64-gpl.tar.xz" if platform.is_arm64 else "linux64-gpl.tar.xz"
+        return _BTBN_BASE + f"ffmpeg-master-latest-{suffix}"
+
+    # macOS: evermeet が単体バイナリ (zip) を提供
+    if platform.is_macos:
+        return "https://evermeet.cx/ffmpeg/getrelease/zip"
+
+    raise RuntimeError(
+        f"ffmpeg の配布物はこの OS には用意されていません: {platform.display_name}"
+    )
+
+
+def _local_filename(name: str, platform: PlatformInfo) -> str:
+    # Windows のみ .exe 拡張子を付ける
+    return f"{name}.exe" if platform.is_windows else name
+
+
+# ─────────────────────────────────────────────────────────────────────
+# BinaryManager
+# ─────────────────────────────────────────────────────────────────────
 
 class BinaryManager:
+    # yt-dlp / ffmpeg / aria2c の検出とインストールを担うファサード。
+
     def __init__(self, config: Config, platform: PlatformInfo) -> None:
         self._config = config
         self._platform = platform
+        INSTALL_DIR.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
-    # 検索
+    # 検出
     # ------------------------------------------------------------------
 
     def find(self, name: str) -> Optional[str]:
-        """バイナリの絶対パスを返す。見つからない場合は None を返す。"""
-        key = _CONFIG_KEYS[name]
-        configured = self._config.get(key, "")
+        # 管理対象 (yt-dlp / ffmpeg) は INSTALL_DIR のローカルコピーのみを参照する。
+        # システム PATH 上の別バージョンが混入しないようにするため。
+        if name in _MANAGED:
+            return self._find_managed(name)
+        return self._find_system(name)
+
+    def _find_managed(self, name: str) -> Optional[str]:
+        local = INSTALL_DIR / _local_filename(name, self._platform)
+        if local.is_file():
+            return self._save_path(name, str(local))
+        # 旧設定のクリーンアップ: 過去にシステム PATH を保存していた場合は破棄する
+        self._config.set(_CONFIG_KEYS[name], "")
+        return None
+
+    def _find_system(self, name: str) -> Optional[str]:
+        # aria2c などのオプション依存はシステム PATH を尊重する
+        configured = self._config.get(_CONFIG_KEYS[name], "")
         if configured and Path(configured).is_file():
             return configured
+
         found = shutil.which(name)
         if found:
-            self._config.set(key, found)
+            self._config.set(_CONFIG_KEYS[name], found)
         return found
 
     def get_missing(self) -> List[str]:
-        return [n for n in REQUIRED if not self.find(n)]
+        # 必須バイナリのうち見つからないものを返す。
+        return [name for name in REQUIRED if not self.find(name)]
 
     # ------------------------------------------------------------------
-    # インストール
+    # インストール (公開エントリーポイント)
     # ------------------------------------------------------------------
 
     def install(
@@ -100,243 +165,169 @@ class BinaryManager:
         name: str,
         progress: Optional[ProgressCallback] = None,
     ) -> Optional[str]:
-        """バイナリを自動インストールする。成功時はパスを返す。"""
+        # バイナリを自動インストールし、成功時はパスを返す。
+        if name in _MANAGED:
+            return self._install_managed(name, progress)
+        return self._install_system(name)
+
+    # ------------------------------------------------------------------
+    # 管理バイナリ (yt-dlp / ffmpeg) の URL ダウンロード
+    # ------------------------------------------------------------------
+
+    def _install_managed(
+        self, name: str, progress: Optional[ProgressCallback]
+    ) -> str:
+        if name == "yt-dlp":
+            return self._install_ytdlp(progress)
+        if name == "ffmpeg":
+            return self._install_ffmpeg(progress)
+        raise ValueError(f"未知の管理バイナリ: {name}")
+
+    def _install_ytdlp(self, progress: Optional[ProgressCallback]) -> str:
+        # 単一の実行ファイルなのでそのまま INSTALL_DIR に保存する。
+        url = _ytdlp_url(self._platform)
+        dest = INSTALL_DIR / _local_filename("yt-dlp", self._platform)
+
+        _download_file(url, dest, progress)
+        if not self._platform.is_windows:
+            _make_executable(dest)
+
+        self._config.set(_CONFIG_KEYS["yt-dlp"], str(dest))
+        return str(dest)
+
+    def _install_ffmpeg(self, progress: Optional[ProgressCallback]) -> str:
+        # アーカイブをダウンロード → ffmpeg バイナリのみを INSTALL_DIR に展開する。
+        url = _ffmpeg_url(self._platform)
+        dest = INSTALL_DIR / _local_filename("ffmpeg", self._platform)
+
+        # 拡張子はダウンロード後に zipfile で判定するため、suffix は付けなくても可。
+        # ただし extract 側のヒントとして残しておく。
+        suffix = ".zip" if (self._platform.is_windows or self._platform.is_macos) else ".tar.xz"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            archive_path = Path(tmp.name)
+
+        try:
+            # 0–80%: ダウンロード
+            _download_file(url, archive_path, _scale_progress(progress, 0, 80))
+            _emit(progress, 85)
+
+            # 85–100%: 展開
+            _extract_ffmpeg(archive_path, dest, _local_filename("ffmpeg", self._platform))
+            if not self._platform.is_windows:
+                _make_executable(dest)
+            _emit(progress, 100)
+        finally:
+            archive_path.unlink(missing_ok=True)
+
+        self._config.set(_CONFIG_KEYS["ffmpeg"], str(dest))
+        return str(dest)
+
+    # ------------------------------------------------------------------
+    # システムバイナリ (aria2c) のインストール
+    # ------------------------------------------------------------------
+
+    def _install_system(self, name: str) -> Optional[str]:
         if self._platform.is_windows:
             return self._install_winget(name)
         if self._platform.is_linux:
-            return self._install_linux(name, progress)
+            return self._install_aria2c_linux(name)
         if self._platform.is_macos:
-            return self._install_macos(name, progress)
-        raise RuntimeError(
-            f"自動インストールは Windows、Linux、macOS のみ対応しています（現在の OS: {self._platform.display_name}）。"
-            f"\n手動で {name} をインストールしてください。"
-        )
+            return self._install_brew(name)
 
-    # ------------------------------------------------------------------
-    # Windows 用
-    # ------------------------------------------------------------------
+        raise RuntimeError(
+            f"自動インストールは Windows / Linux / macOS のみ対応しています "
+            f"(現在の OS: {self._platform.display_name})。\n"
+            f"手動で {name} をインストールしてください。"
+        )
 
     def _install_winget(self, name: str) -> Optional[str]:
-        wid = _WINGET_IDS.get(name)
-        if not wid:
-            raise ValueError(f"No winget ID for {name}")
-        cmd = [
-            "winget", "install", "--id", wid, "-e", "--silent",
-            "--accept-source-agreements", "--accept-package-agreements",
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr or result.stdout)
-        path = shutil.which(name)
-        if path:
-            self._config.set(_CONFIG_KEYS[name], path)
-        return path
+        winget_id = _WINGET_IDS.get(name)
+        if not winget_id:
+            raise ValueError(f"winget ID が定義されていません: {name}")
 
-    # ------------------------------------------------------------------
-    # Linux 用
-    # ------------------------------------------------------------------
+        _run_checked([
+            "winget", "install",
+            "--id", winget_id,
+            "-e", "--silent",
+            "--accept-source-agreements",
+            "--accept-package-agreements",
+        ])
+        return self._save_path(name, shutil.which(name))
 
-    def _install_linux(
-        self, name: str, progress: Optional[ProgressCallback]
-    ) -> Optional[str]:
-        if name == "yt-dlp":
-            return self._curl_binary("yt-dlp", self._ytdlp_url(), progress)
-        if name == "ffmpeg":
-            return self._install_ffmpeg_linux(progress)
-        if name == "aria2c":
-            return self.install_aria2c_linux()
-        raise ValueError(f"Unknown binary: {name}")
+    def _install_aria2c_linux(self, name: str) -> Optional[str]:
+        # GUI アプリから sudo を直接呼ぶとパスワード入力でハングするため、
+        # Polkit の pkexec を使い GUI 特権昇格ダイアログを表示する。
+        if name != "aria2c":
+            raise ValueError(f"Linux 自動インストール非対応: {name}")
 
-    def _ytdlp_url(self) -> str:
-        arch = "aarch64" if self._platform.is_arm64 else "x86_64"
-        return _DL_URLS["yt-dlp"][arch]
-
-    def _ffmpeg_url(self) -> str:
-        arch = "aarch64" if self._platform.is_arm64 else "x86_64"
-        return _DL_URLS["ffmpeg"][arch]
-
-    def _pkexec_install_to_system(self, src: Path, name: str) -> str:
-        """pkexec を使って src を /usr/local/bin/<name> にインストールする。
-
-        Polkit の GUI 権限昇格ダイアログが表示されるため、
-        GUI アプリからでも安全に root 権限を要求できる。
-        pkexec が存在しない場合は RuntimeError を投げる。
-        """
-        pkexec = shutil.which("pkexec")
-        if pkexec is None:
-            raise RuntimeError(
-                "pkexec が見つかりません。\n"
-                f"ターミナルで手動インストールしてください:\n"
-                f"  sudo install -m 755 {src} {SYSTEM_BIN / name}"
-            )
-
-        dest = SYSTEM_BIN / name
-        result = subprocess.run(
-            [pkexec, "install", "-m", "755", "-o", "root", "-g", "root",
-             str(src), str(dest)],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(
-                result.stderr or result.stdout or f"{name} のインストールに失敗しました。"
-            )
-        return str(dest)
-
-    def _curl_binary(
-        self,
-        name: str,
-        url: str,
-        progress: Optional[ProgressCallback],
-    ) -> str:
-        """HTTP経由で単一の実行可能バイナリをダウンロードし、/usr/local/bin にインストールする。"""
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{name}") as tmp:
-            tmp_path = Path(tmp.name)
-
-        try:
-            _download_file(url, tmp_path, progress)
-            _make_executable(tmp_path)
-            dest = self._pkexec_install_to_system(tmp_path, name)
-        finally:
-            tmp_path.unlink(missing_ok=True)
-
-        self._config.set(_CONFIG_KEYS[name], dest)
-        return dest
-
-    def _install_ffmpeg_linux(
-        self, progress: Optional[ProgressCallback]
-    ) -> Optional[str]:
-        url = self._ffmpeg_url()
-
-        with tempfile.NamedTemporaryFile(suffix=".tar.xz", delete=False) as tmp:
-            tmp_path = Path(tmp.name)
-
-        try:
-            # ダウンロード（進捗 0〜70% を報告）
-            _download_file(url, tmp_path, _scale_progress(progress, 0, 70))
-
-            if progress:
-                progress(75)
-
-            # ffmpeg バイナリのみを一時ディレクトリに展開
-            with tempfile.TemporaryDirectory() as tmpdir:
-                tmp_ffmpeg = Path(tmpdir) / "ffmpeg"
-                with tarfile.open(tmp_path, "r:xz") as tar:
-                    for member in tar.getmembers():
-                        if Path(member.name).name == "ffmpeg" and member.isfile():
-                            member.name = "ffmpeg"
-                            tar.extract(member, path=tmpdir, filter="data")
-                            break
-                    else:
-                        raise RuntimeError("ffmpeg binary not found inside archive")
-
-                _make_executable(tmp_ffmpeg)
-
-                if progress:
-                    progress(90)
-
-                # pkexec で /usr/local/bin へインストール（GUI 権限昇格）
-                dest = self._pkexec_install_to_system(tmp_ffmpeg, "ffmpeg")
-
-            self._config.set(_CONFIG_KEYS["ffmpeg"], dest)
-            if progress:
-                progress(100)
-            return dest
-        finally:
-            tmp_path.unlink(missing_ok=True)
-
-    # ------------------------------------------------------------------
-    # macOS 用
-    # ------------------------------------------------------------------
-
-    def _install_macos(
-        self, name: str, progress: Optional[ProgressCallback]
-    ) -> Optional[str]:
-        """macOS 向けインストール。Homebrew が必要。未インストール時はコマンドを表示して終了。"""
-        brew = shutil.which("brew")
-        if not brew:
-            raise RuntimeError(
-                "Homebrew（brew）が見つかりません。\n"
-                "以下のコマンドをターミナルに貼り付けて Homebrew をインストールしてください:\n\n"
-                '/bin/bash -c "$(curl -fsSL'
-                " https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"\n\n"
-                "インストール後、アプリを再起動して再度セットアップを実行してください。"
-            )
-        return self._brew_install(name, brew)
-
-    def _brew_install(self, name: str, brew: str) -> Optional[str]:
-        """brew install <package> を実行してバイナリをインストールする。"""
-        pkg = _BREW_NAMES.get(name)
-        if not pkg:
-            raise ValueError(f"Homebrew パッケージが不明です: {name}")
-        result = subprocess.run(
-            [brew, "install", pkg],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr or result.stdout)
-        path = shutil.which(name)
-        if path:
-            self._config.set(_CONFIG_KEYS[name], path)
-        return path
-
-    def _pkg_manager(self, package: str) -> Optional[List[str]]:
-        """インストールに使えるパッケージマネージャを検出し、コマンドを返す。
-
-        sudo を伴う実際のインストールは GUI 側で pkexec 等を介して行うため、
-        ここではコマンドリストを返すだけにとどめる。
-        """
-        managers = [
-            ("apt-get", ["apt-get", "install", "-y", package]),
-            ("dnf",     ["dnf",     "install", "-y", package]),
-            ("pacman",  ["pacman",  "-S", "--noconfirm", package]),
-            ("zypper",  ["zypper",  "install", "-y", package]),
-        ]
-        for mgr_bin, cmd in managers:
-            if shutil.which(mgr_bin):
-                return cmd
-        return None
-
-    def install_aria2c_linux(self) -> Optional[str]:
-        """pkexec 経由で aria2c をインストールする。成功時はパスを返す。
-
-        GUI アプリから sudo を直接呼ぶとパスワード入力待ちでハングするため、
-        Polkit の pkexec を使って GUI 特権昇格ダイアログを起動する。
-        pkexec が存在しない場合は RuntimeError を投げ、呼び出し元が
-        手動インストールを促すダイアログを表示する。
-        """
-        cmd = self._pkg_manager("aria2")
+        cmd = self._detect_pkg_manager()
         if cmd is None:
             raise RuntimeError(
                 "対応するパッケージマネージャが見つかりませんでした。\n"
-                "ターミナルで手動インストールしてください（例: sudo apt-get install aria2）。"
+                "ターミナルで手動インストールしてください "
+                "(例: sudo apt-get install aria2)。"
             )
 
         pkexec = shutil.which("pkexec")
         if pkexec is None:
             raise RuntimeError(
                 "pkexec が見つかりません。\n"
-                "ターミナルで手動インストールしてください（例: sudo apt-get install aria2）。"
+                "ターミナルで手動インストールしてください "
+                "(例: sudo apt-get install aria2)。"
             )
 
-        result = subprocess.run(
-            [pkexec] + cmd,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr or result.stdout or "インストールに失敗しました。")
+        _run_checked([pkexec, *cmd])
+        return self._save_path("aria2c", shutil.which("aria2c"))
 
-        path = shutil.which("aria2c")
+    def _detect_pkg_manager(self) -> Optional[List[str]]:
+        for cmd in _LINUX_PKG_MANAGERS:
+            if shutil.which(cmd[0]):
+                return cmd
+        return None
+
+    def _install_brew(self, name: str) -> Optional[str]:
+        brew = shutil.which("brew")
+        if not brew:
+            raise RuntimeError(
+                "Homebrew (brew) が見つかりません。\n"
+                "以下のコマンドをターミナルに貼り付けて Homebrew を"
+                "インストールしてください:\n\n"
+                '/bin/bash -c "$(curl -fsSL'
+                ' https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"\n\n'
+                "インストール後、アプリを再起動して再度セットアップを実行してください。"
+            )
+
+        package = _BREW_NAMES.get(name)
+        if not package:
+            raise ValueError(f"Homebrew パッケージが不明です: {name}")
+
+        _run_checked([brew, "install", package])
+        return self._save_path(name, shutil.which(name))
+
+    # ------------------------------------------------------------------
+    # 内部ヘルパー
+    # ------------------------------------------------------------------
+
+    def _save_path(self, name: str, path: Optional[str]) -> Optional[str]:
+        # 見つかったパスを設定ファイルへ保存し、そのまま返す。
         if path:
-            self._config.set(_CONFIG_KEYS["aria2c"], path)
+            self._config.set(_CONFIG_KEYS[name], path)
         return path
 
 
-# ------------------------------------------------------------------
-# ヘルパー関数
-# ------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────
+# モジュールレベルのユーティリティ
+# ─────────────────────────────────────────────────────────────────────
+
+def _run_checked(
+    cmd: List[str],
+    fallback_message: str = "コマンドの実行に失敗しました。",
+) -> None:
+    # subprocess.run を実行し、終了コードが非 0 なら RuntimeError を投げる。
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr or result.stdout or fallback_message)
+
 
 def _download_file(
     url: str,
@@ -344,27 +335,87 @@ def _download_file(
     progress: Optional[ProgressCallback],
     timeout: int = 120,
 ) -> None:
-    response = requests.get(url, stream=True, timeout=timeout)
+    # URL からファイルをダウンロードし、進捗コールバックを呼ぶ。
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    response = requests.get(url, stream=True, timeout=timeout, allow_redirects=True)
     response.raise_for_status()
+
     total = int(response.headers.get("content-length", 0))
     downloaded = 0
+
     with dest.open("wb") as fh:
         for chunk in response.iter_content(chunk_size=65_536):
+            if not chunk:
+                continue
             fh.write(chunk)
             downloaded += len(chunk)
             if progress and total:
                 progress(int(downloaded / total * 100))
-    if progress:
-        progress(100)
+
+    _emit(progress, 100)
+
+
+def _extract_ffmpeg(archive_path: Path, dest: Path, target_name: str) -> None:
+    # アーカイブから ffmpeg 実行ファイルを 1 本だけ取り出して dest に書き出す。
+    # zip / tar.xz の両方に対応 (zip 判定で分岐)。
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if zipfile.is_zipfile(archive_path):
+        _extract_member_from_zip(archive_path, dest, target_name)
+    else:
+        _extract_member_from_tar(archive_path, dest, target_name)
+
+
+def _extract_member_from_zip(archive_path: Path, dest: Path, target_name: str) -> None:
+    with zipfile.ZipFile(archive_path) as zf:
+        for member in zf.infolist():
+            if member.is_dir():
+                continue
+            if Path(member.filename).name.lower() == target_name.lower():
+                with zf.open(member) as src, dest.open("wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                return
+    raise RuntimeError(
+        f"{target_name} が zip アーカイブ内に見つかりませんでした"
+    )
+
+
+def _extract_member_from_tar(archive_path: Path, dest: Path, target_name: str) -> None:
+    with tarfile.open(archive_path, "r:*") as tar:
+        for member in tar.getmembers():
+            if not member.isfile():
+                continue
+            if Path(member.name).name == target_name:
+                src = tar.extractfile(member)
+                if src is None:
+                    continue
+                try:
+                    with dest.open("wb") as dst:
+                        shutil.copyfileobj(src, dst)
+                finally:
+                    src.close()
+                return
+    raise RuntimeError(
+        f"{target_name} が tar アーカイブ内に見つかりませんでした"
+    )
 
 
 def _make_executable(path: Path) -> None:
+    # ファイルに実行ビットを立てる (chmod +x)。
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
+def _emit(callback: Optional[ProgressCallback], value: int) -> None:
+    # コールバックが None でなければ進捗値を発火する。
+    if callback is not None:
+        callback(value)
+
+
 def _scale_progress(
-    cb: Optional[ProgressCallback], lo: int, hi: int
+    callback: Optional[ProgressCallback],
+    lo: int,
+    hi: int,
 ) -> Optional[ProgressCallback]:
-    if cb is None:
+    # 0–100 の進捗を [lo, hi] 範囲にマッピングするラッパを返す。
+    if callback is None:
         return None
-    return lambda pct: cb(lo + int(pct * (hi - lo) / 100))
+    return lambda pct: callback(lo + int(pct * (hi - lo) / 100))

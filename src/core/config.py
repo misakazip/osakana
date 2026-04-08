@@ -1,11 +1,11 @@
-"""~/.osakana_config ファイルの読み書きを行う。
-
-フォーマット（1行に1エントリ）:
-    # コメント
-    Key: value
-
-真偽値は "true" / "false" として保存される。
-"""
+# ~/.osakana_config の読み書きを行う。
+#
+# ファイル形式 (1 行 1 エントリ):
+#
+#     # コメント行
+#     Key: value
+#
+# 真偽値は "true" / "false"、数値はそのまま整数として保存される。
 from __future__ import annotations
 
 from datetime import datetime
@@ -14,37 +14,65 @@ from typing import Any, Dict
 
 from .platform_detector import detect as detect_platform
 
+# ─────────────────────────────────────────────────────────────────────
+# 定数
+# ─────────────────────────────────────────────────────────────────────
+
 CONFIG_PATH = Path.home() / ".osakana_config"
 
+# 設定項目のデフォルト値。UI 上のグループごとに並べてある。
 DEFAULTS: Dict[str, Any] = {
-    "AutoInstall": False,
-    "AutoUpdate": False,
-    "AutoUpdateApp": False,
-    "IsAria2cEnabled": False,
-    "Aria2cConnections": 16,
+    # ── インストール / アップデート ────────────────────────
+    "AutoInstall":          False,
+    "AutoUpdate":           False,
+    "AutoUpdateApp":        False,
+
+    # ── aria2c ──────────────────────────────────────────────
+    "IsAria2cEnabled":      False,
+    "Aria2cConnections":    16,
     "MaxParallelDownloads": 2,
-    "OutputDirectory": str(Path.home() / "Downloads"),
-    "FilenameTemplate": "%(title)s [%(id)s].%(ext)s",
-    "SpeedLimit": "",
-    "Retries": 10,
-    "DownloadArchive": "",
-    "SubLangs": "ja,en",
-    "AutoSubs": False,
-    "SubFormat": "srt",
-    "EmbedThumbnail": False,
-    "EmbedMetadata": False,
-    "SponsorBlock": "off",
-    "Proxy": "",
-    "CookiesBrowser": "",
-    "DesktopNotify": False,
-    "YtdlpPath": "",
-    "FfmpegPath": "",
-    "Aria2cPath": "",
-    "ExtraArgs": "",
-    "IsDarkThemeEnabled": False,
-    "HwAccel": "none",
+
+    # ── 出力 ────────────────────────────────────────────────
+    "OutputDirectory":      str(Path.home() / "Downloads"),
+    "FilenameTemplate":     "%(title)s [%(id)s].%(ext)s",
+
+    # ── ダウンロード制御 ────────────────────────────────────
+    "SpeedLimit":           "",
+    "Retries":              10,
+    "DownloadArchive":      "",
+
+    # ── 字幕 ────────────────────────────────────────────────
+    "SubLangs":             "ja,en",
+    "AutoSubs":             False,
+    "SubFormat":            "srt",
+
+    # ── 後処理 ──────────────────────────────────────────────
+    "EmbedThumbnail":       False,
+    "EmbedMetadata":        False,
+    "SponsorBlock":         "off",
+    "HwAccel":              "none",
+
+    # ── ネットワーク ────────────────────────────────────────
+    "Proxy":                "",
+    "CookiesBrowser":       "",
+
+    # ── 通知 / 外観 ─────────────────────────────────────────
+    "DesktopNotify":        False,
+    "IsDarkThemeEnabled":   False,
+
+    # ── バイナリパス ────────────────────────────────────────
+    "YtdlpPath":            "",
+    "FfmpegPath":           "",
+    "Aria2cPath":           "",
+
+    # ── その他 ──────────────────────────────────────────────
+    "ExtraArgs":            "",
 }
 
+
+# ─────────────────────────────────────────────────────────────────────
+# シリアライズ
+# ─────────────────────────────────────────────────────────────────────
 
 def _serialize(value: Any) -> str:
     if isinstance(value, bool):
@@ -53,21 +81,30 @@ def _serialize(value: Any) -> str:
 
 
 def _deserialize(raw: str) -> Any:
-    s = raw.strip()
-    if s.lower() == "true":
+    # 文字列を適切な Python 型に変換する (bool / int / str)。
+    text = raw.strip()
+    lowered = text.lower()
+    if lowered == "true":
         return True
-    if s.lower() == "false":
+    if lowered == "false":
         return False
     try:
-        return int(s)
+        return int(text)
     except ValueError:
-        return s
+        return text
 
+
+# ─────────────────────────────────────────────────────────────────────
+# Config
+# ─────────────────────────────────────────────────────────────────────
 
 class Config:
+    # 設定ファイルへの読み書きファサード。書き込みの度にファイル全体を再生成する。
+
     def __init__(self) -> None:
         self._data: Dict[str, Any] = DEFAULTS.copy()
         self._platform = detect_platform()
+
         if CONFIG_PATH.exists():
             self._load()
         else:
@@ -81,37 +118,41 @@ class Config:
         return self._data.get(key, default)
 
     def set(self, key: str, value: Any) -> None:
+        # 単一項目を更新し即座に保存する。
         self._data[key] = value
         self.save()
 
     def update(self, updates: Dict[str, Any]) -> None:
+        # 複数項目を一括更新し 1 回だけ保存する。
         self._data.update(updates)
         self.save()
 
     def save(self) -> None:
-        header = [
+        # 現在の設定値をディスクへ書き出す。
+        header_lines = [
             "# Osakana Config",
             f"# Platform: {self._platform.display_name}",
             f"# Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "",
         ]
-        body = [f"{k}: {_serialize(v)}" for k, v in self._data.items()]
-        content = "\n".join(header + body) + "\n"
-
-        CONFIG_PATH.write_text(content, encoding="utf-8")
+        body_lines = [f"{key}: {_serialize(value)}" for key, value in self._data.items()]
+        CONFIG_PATH.write_text(
+            "\n".join(header_lines + body_lines) + "\n",
+            encoding="utf-8",
+        )
 
     # ------------------------------------------------------------------
-    # 内部ヘルパー
+    # 読み込み
     # ------------------------------------------------------------------
 
     def _load(self) -> None:
+        # ファイルから設定を読み込む。未知キーは無視する。
         with CONFIG_PATH.open("r", encoding="utf-8") as fh:
-            for line in fh:
-                stripped = line.strip()
-                if not stripped or stripped.startswith("#"):
+            for raw_line in fh:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or ":" not in line:
                     continue
-                if ":" in stripped:
-                    key, _, value = stripped.partition(":")
-                    key = key.strip()
-                    if key in DEFAULTS:
-                        self._data[key] = _deserialize(value)
+                key, _, value = line.partition(":")
+                key = key.strip()
+                if key in DEFAULTS:
+                    self._data[key] = _deserialize(value)

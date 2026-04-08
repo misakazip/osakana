@@ -1,9 +1,9 @@
-"""メインダウンロードタブ: URL入力、フォーマット / オプション、キュー表示。"""
+# メインダウンロードタブ: URL 入力 / フォーマット / オプション / キュー表示。
 from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -26,30 +26,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-# プレイリスト / チャンネルURLを示すパターン
-_BULK_URL_RE = re.compile(
-    r"[?&]list="           # YouTube プレイリスト (?list= / &list=)
-    r"|/playlist\?"        # /playlist?
-    r"|/channel/"          # YouTube チャンネル /channel/UC...
-    r"|youtube\.com/c/"    # /c/ChannelName
-    r"|youtube\.com/@"     # /@handle
-    r"|youtube\.com/user/" # /user/name
-    r"|/videos$"           # チャンネルの動画一覧ページ末尾
-    r"|nicovideo\.jp/user/\d+/video"  # ニコニコ ユーザー投稿動画
-    r"|nicovideo\.jp/series/"         # ニコニコ シリーズ
-    r"|twitch\.tv/[^/]+/videos",      # Twitch チャンネル動画一覧
-    re.IGNORECASE,
-)
-
-
-def _has_bulk_url(urls: List[str]) -> bool:
-    """URLリストにプレイリストやチャンネルURLが含まれるか判定する。"""
-    return any(_BULK_URL_RE.search(u) for u in urls)
-
 from core.config import Config
 from core.downloader import (
     AUDIO_FORMATS,
     CONTAINERS,
+    DEFAULT_FILENAME_TEMPLATE,
     VIDEO_QUALITIES,
     DownloadManager,
     DownloadTask,
@@ -57,9 +38,44 @@ from core.downloader import (
 from gui.queue_widget import QueueWidget
 from gui.trim_widget import TrimWidget
 
+# ─────────────────────────────────────────────────────────────────────
+# プレイリスト / チャンネル URL の判定
+# ─────────────────────────────────────────────────────────────────────
+
+# 各サイトでまとめてダウンロードを示すパターン
+_BULK_URL_RE = re.compile(
+    r"[?&]list="                       # YouTube プレイリスト (?list= / &list=)
+    r"|/playlist\?"                    # /playlist?
+    r"|/channel/"                      # YouTube チャンネル /channel/UC...
+    r"|youtube\.com/c/"                # /c/ChannelName
+    r"|youtube\.com/@"                 # /@handle
+    r"|youtube\.com/user/"             # /user/name
+    r"|/videos$"                       # チャンネルの動画一覧ページ末尾
+    r"|nicovideo\.jp/user/\d+/video"   # ニコニコ ユーザー投稿動画
+    r"|nicovideo\.jp/series/"          # ニコニコ シリーズ
+    r"|twitch\.tv/[^/]+/videos",       # Twitch チャンネル動画一覧
+    re.IGNORECASE,
+)
+
+
+def _has_bulk_url(urls: Iterable[str]) -> bool:
+    # URL リストにプレイリストやチャンネル URL が含まれるか判定する。
+    return any(_BULK_URL_RE.search(u) for u in urls)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# DownloadTab
+# ─────────────────────────────────────────────────────────────────────
 
 class DownloadTab(QWidget):
-    def __init__(self, manager: DownloadManager, config: Config, parent: Optional[QWidget] = None) -> None:
+    # URL の入力からキュー監視までを 1 画面でまかなうメインタブ。
+
+    def __init__(
+        self,
+        manager: DownloadManager,
+        config: Config,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
         self._manager = manager
         self._config = config
@@ -79,42 +95,43 @@ class DownloadTab(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+
         inner = QWidget()
         inner_layout = QVBoxLayout(inner)
         inner_layout.setSpacing(8)
         inner_layout.setContentsMargins(0, 0, 0, 0)
+
         inner_layout.addWidget(self._build_url_group())
         inner_layout.addWidget(self._build_format_group())
         inner_layout.addWidget(self._build_options_group())
         inner_layout.addWidget(self._build_output_row())
         inner_layout.addLayout(self._build_action_row())
         inner_layout.addWidget(self._build_trim_widget())
-
-
         inner_layout.addWidget(self._build_queue_group())
         inner_layout.addWidget(self._build_raw_log_group())
-        scroll.setWidget(inner)
 
+        scroll.setWidget(inner)
         root.addWidget(scroll)
         root.addWidget(self._build_overall_progress())
 
     def _build_url_group(self) -> QGroupBox:
         box = QGroupBox("URL")
         layout = QVBoxLayout(box)
+
         self._url_edit = QPlainTextEdit()
-        self._url_edit.setPlaceholderText(
-            "ダウンロードしたいURLを入力してください（複数行可）"
-        )
+        self._url_edit.setPlaceholderText("ダウンロードしたい URL を入力してください (複数行可)")
         self._url_edit.setFixedHeight(80)
         layout.addWidget(self._url_edit)
 
-        btn_row = QHBoxLayout()
         load_file_btn = QPushButton("ファイルから読み込む…")
-        load_file_btn.setToolTip("URLが1行ずつ記述されたテキストファイルを選択します")
+        load_file_btn.setToolTip("URL が 1 行ずつ記述されたテキストファイルを選択します")
         load_file_btn.clicked.connect(self._load_urls_from_file)
+
         clear_url_btn = QPushButton("クリア")
         clear_url_btn.setFixedWidth(70)
         clear_url_btn.clicked.connect(self._url_edit.clear)
+
+        btn_row = QHBoxLayout()
         btn_row.addWidget(load_file_btn)
         btn_row.addStretch()
         btn_row.addWidget(clear_url_btn)
@@ -126,19 +143,17 @@ class DownloadTab(QWidget):
         box = QGroupBox("フォーマット")
         layout = QHBoxLayout(box)
 
-        # 動画画質
         layout.addWidget(QLabel("画質:"))
         self._quality_combo = QComboBox()
         self._quality_combo.addItems(VIDEO_QUALITIES)
         layout.addWidget(self._quality_combo)
 
-        # コンテナ
         layout.addWidget(QLabel("コンテナ:"))
         self._container_combo = QComboBox()
         self._container_combo.addItems(CONTAINERS)
         layout.addWidget(self._container_combo)
 
-        # 音声フォーマット（音声のみにチェックした場合に表示）
+        # 音声フォーマット (音声のみチェック時のみ表示)
         self._audio_fmt_label = QLabel("音声フォーマット:")
         self._audio_fmt_combo = QComboBox()
         self._audio_fmt_combo.addItems(AUDIO_FORMATS)
@@ -157,19 +172,22 @@ class DownloadTab(QWidget):
         self._audio_only_cb = QCheckBox("音声のみ")
         self._playlist_cb   = QCheckBox("プレイリスト全体")
         self._subs_cb       = QCheckBox("字幕を埋め込む")
-        self._h265_cb       = QCheckBox("H.265 (HEVC) に変換")
+
+        self._h265_cb = QCheckBox("H.265 (HEVC) に変換")
         self._h265_cb.setToolTip(
-            "ffmpeg を使って動画を H.265/HEVC に再エンコードします（変換に時間がかかります）"
+            "ffmpeg を使って動画を H.265/HEVC に再エンコードします (変換に時間がかかります)"
         )
+
         self._antibot_cb = QCheckBox("bot 検知回避")
         self._antibot_cb.setToolTip(
-            "レート制限とリクエスト間隔を設けてbot検知を回避します\n"
+            "レート制限とリクエスト間隔を設けて bot 検知を回避します\n"
             "(--rate-limit 5M  --min-sleep-interval 15  --max-sleep-interval 45)"
         )
+
         self._members_only_cb = QCheckBox("メンバーシップのみ")
         self._members_only_cb.setToolTip(
             "チャンネルメンバー限定の動画のみダウンロードします\n"
-            "(--match-filter \"availability=subscriber_only\")"
+            '(--match-filter "availability=subscriber_only")'
         )
 
         self._notify_cb = QCheckBox("完了時に通知")
@@ -181,17 +199,20 @@ class DownloadTab(QWidget):
 
         self._audio_only_cb.toggled.connect(self._on_audio_only_toggled)
 
-        layout.addWidget(self._audio_only_cb)
-        layout.addWidget(self._playlist_cb)
-        layout.addWidget(self._subs_cb)
-        layout.addWidget(self._h265_cb)
-        layout.addWidget(self._antibot_cb)
-        layout.addWidget(self._members_only_cb)
-        layout.addWidget(self._notify_cb)
+        for cb in (
+            self._audio_only_cb,
+            self._playlist_cb,
+            self._subs_cb,
+            self._h265_cb,
+            self._antibot_cb,
+            self._members_only_cb,
+            self._notify_cb,
+        ):
+            layout.addWidget(cb)
 
-        # aria2c 並列接続数（設定で有効化されている場合のみ表示）
-        self._aria2c_label  = QLabel("aria2c 並列接続数:")
-        self._aria2c_spin   = QSpinBox()
+        # aria2c 並列接続数 (設定で有効化されている場合のみ表示)
+        self._aria2c_label = QLabel("aria2c 並列接続数:")
+        self._aria2c_spin = QSpinBox()
         self._aria2c_spin.setRange(1, 64)
         self._aria2c_spin.setValue(self._config.get("Aria2cConnections", 16))
         self._aria2c_spin.valueChanged.connect(
@@ -200,6 +221,7 @@ class DownloadTab(QWidget):
         aria2c_visible = bool(self._config.get("IsAria2cEnabled"))
         self._aria2c_label.setVisible(aria2c_visible)
         self._aria2c_spin.setVisible(aria2c_visible)
+
         layout.addStretch()
         layout.addWidget(self._aria2c_label)
         layout.addWidget(self._aria2c_spin)
@@ -209,16 +231,21 @@ class DownloadTab(QWidget):
     def _build_output_row(self) -> QGroupBox:
         box = QGroupBox("保存先")
         layout = QHBoxLayout(box)
-        self._output_edit = QLineEdit(self._config.get("OutputDirectory", str(Path.home() / "Downloads")))
+
+        default_dir = self._config.get("OutputDirectory", str(Path.home() / "Downloads"))
+        self._output_edit = QLineEdit(default_dir)
+
         browse_btn = QPushButton("参照…")
         browse_btn.setFixedWidth(70)
         browse_btn.clicked.connect(self._browse_output)
+
         layout.addWidget(self._output_edit)
         layout.addWidget(browse_btn)
         return box
 
     def _build_action_row(self) -> QHBoxLayout:
         layout = QHBoxLayout()
+
         self._dl_btn = QPushButton("ダウンロード")
         self._dl_btn.setFixedHeight(36)
         self._dl_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -235,7 +262,7 @@ class DownloadTab(QWidget):
     def _build_trim_widget(self) -> TrimWidget:
         self._trim = TrimWidget()
         self._trim.set_ytdlp_path(self._config.get("YtdlpPath", "yt-dlp"))
-        # URLフィールドの変更を都度 TrimWidget に反映（最初の1行を使用）
+        # URL フィールドの変更を都度 TrimWidget に反映 (最初の 1 行を使用)
         self._url_edit.textChanged.connect(self._sync_trim_url)
         return self._trim
 
@@ -270,11 +297,13 @@ class DownloadTab(QWidget):
         box = QGroupBox("RAW ログ")
         box.setCheckable(True)
         box.setChecked(False)
+
         layout = QVBoxLayout(box)
 
         self._raw_log = QPlainTextEdit()
         self._raw_log.setReadOnly(True)
         self._raw_log.setMaximumBlockCount(2000)  # メモリ節約のため上限設定
+
         mono = QFont("Monospace")
         mono.setStyleHint(QFont.StyleHint.TypeWriter)
         self._raw_log.setFont(mono)
@@ -329,95 +358,94 @@ class DownloadTab(QWidget):
         self._update_overall_progress()
 
     def _on_download(self) -> None:
-        urls = [
-            line.strip()
-            for line in self._url_edit.toPlainText().splitlines()
-            if line.strip()
-        ]
+        urls = self._collect_urls()
         if not urls:
             return
 
         output_dir = self._output_edit.text().strip() or str(Path.home() / "Downloads")
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-        audio_only    = self._audio_only_cb.isChecked()
-        quality       = self._quality_combo.currentText()
-        audio_fmt     = self._audio_fmt_combo.currentText()
-        container     = self._container_combo.currentText()
-        embed_subs    = self._subs_cb.isChecked()
-        playlist      = self._playlist_cb.isChecked()
-        convert_h265  = self._h265_cb.isChecked()
-        avoid_bot     = self._antibot_cb.isChecked()
-        members_only  = self._members_only_cb.isChecked()
-        trim_start    = self._trim.trim_start() if self._trim.is_trim_enabled() else ""
-        trim_end      = self._trim.trim_end()   if self._trim.is_trim_enabled() else ""
-
-        # プレイリスト / チャンネルURLが含まれ、かつbot検知回避が未選択の場合に確認する
+        avoid_bot = self._antibot_cb.isChecked()
+        # プレイリスト / チャンネルが含まれていてかつ未指定なら確認ダイアログ
         if not avoid_bot and _has_bulk_url(urls):
-            answer = QMessageBox.question(
-                self,
-                "bot 検知回避を有効にしますか？",
-                "プレイリストまたはチャンネルのURLが検出されました。\n\n"
-                "大量ダウンロード時はサーバー側でbot判定される場合があります。\n"
-                "レート制限とリクエスト間隔を設けて検知を回避しますか？\n\n"
-                "  --rate-limit 5M\n"
-                "  --min-sleep-interval 15\n"
-                "  --max-sleep-interval 45",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,  # デフォルト: Yes
-            )
-            if answer == QMessageBox.StandardButton.Yes:
-                avoid_bot = True
+            avoid_bot = self._confirm_avoid_bot()
+            if avoid_bot:
                 self._antibot_cb.setChecked(True)
 
-        filename_tpl = self._config.get("FilenameTemplate", "%(title)s [%(id)s].%(ext)s")
         for url in urls:
-            task = DownloadTask(
-                url=url,
-                output_dir=output_dir,
-                quality=quality,
-                audio_only=audio_only,
-                audio_format=audio_fmt,
-                container=container,
-                embed_subtitles=embed_subs,
-                playlist=playlist,
-                convert_h265=convert_h265,
-                avoid_bot_detection=avoid_bot,
-                members_only=members_only,
-                trim_start=trim_start,
-                trim_end=trim_end,
-                filename_template=filename_tpl,
-            )
-            self._manager.add(task)
+            self._manager.add(self._build_task(url, output_dir, avoid_bot))
 
         self._url_edit.clear()
+
+    def _collect_urls(self) -> List[str]:
+        return [
+            line.strip()
+            for line in self._url_edit.toPlainText().splitlines()
+            if line.strip()
+        ]
+
+    def _confirm_avoid_bot(self) -> bool:
+        answer = QMessageBox.question(
+            self,
+            "bot 検知回避を有効にしますか？",
+            "プレイリストまたはチャンネルの URL が検出されました。\n\n"
+            "大量ダウンロード時はサーバー側で bot 判定される場合があります。\n"
+            "レート制限とリクエスト間隔を設けて検知を回避しますか？\n\n"
+            "  --rate-limit 5M\n"
+            "  --min-sleep-interval 15\n"
+            "  --max-sleep-interval 45",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,  # デフォルト: Yes
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def _build_task(self, url: str, output_dir: str, avoid_bot: bool) -> DownloadTask:
+        trim_enabled = self._trim.is_trim_enabled()
+        return DownloadTask(
+            url=url,
+            output_dir=output_dir,
+            quality=self._quality_combo.currentText(),
+            audio_only=self._audio_only_cb.isChecked(),
+            audio_format=self._audio_fmt_combo.currentText(),
+            container=self._container_combo.currentText(),
+            embed_subtitles=self._subs_cb.isChecked(),
+            playlist=self._playlist_cb.isChecked(),
+            convert_h265=self._h265_cb.isChecked(),
+            avoid_bot_detection=avoid_bot,
+            members_only=self._members_only_cb.isChecked(),
+            trim_start=self._trim.trim_start() if trim_enabled else "",
+            trim_end=self._trim.trim_end() if trim_enabled else "",
+            filename_template=self._config.get("FilenameTemplate", DEFAULT_FILENAME_TEMPLATE),
+        )
 
     def _on_clear_finished(self) -> None:
         self._queue.remove_finished()
         self._update_overall_progress()
 
     def _sync_trim_url(self) -> None:
-        first = self._url_edit.toPlainText().splitlines()
-        self._trim.set_url(first[0].strip() if first else "")
+        first_line = self._url_edit.toPlainText().splitlines()
+        self._trim.set_url(first_line[0].strip() if first_line else "")
 
     def _on_raw_output(self, task_id: str, line: str) -> None:
         if self._raw_log_box.isChecked():
             self._raw_log.appendPlainText(line)
 
     def _load_urls_from_file(self) -> None:
-        """テキストファイルからURLを読み込んでURL欄に追加する。"""
+        # テキストファイルから URL を読み込んで URL 欄に追加する。
         path, _ = QFileDialog.getOpenFileName(
-            self, "URLファイルを選択", "", "テキストファイル (*.txt);;すべてのファイル (*)"
+            self, "URL ファイルを選択", "", "テキストファイル (*.txt);;すべてのファイル (*)"
         )
         if not path:
             return
+
         try:
             lines = Path(path).read_text(encoding="utf-8").splitlines()
-            urls = [l.strip() for l in lines if l.strip() and not l.startswith("#")]
-            if urls:
-                existing = self._url_edit.toPlainText().strip()
-                combined = (existing + "\n" if existing else "") + "\n".join(urls)
-                self._url_edit.setPlainText(combined)
+            urls = [line.strip() for line in lines if line.strip() and not line.startswith("#")]
+            if not urls:
+                return
+            existing = self._url_edit.toPlainText().strip()
+            combined = (existing + "\n" if existing else "") + "\n".join(urls)
+            self._url_edit.setPlainText(combined)
         except Exception as exc:
             QMessageBox.warning(self, "ファイル読み込みエラー", str(exc))
 
@@ -436,4 +464,3 @@ class DownloadTab(QWidget):
         if directory:
             self._output_edit.setText(directory)
             self._config.set("OutputDirectory", directory)
-

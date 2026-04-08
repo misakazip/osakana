@@ -1,12 +1,12 @@
-"""ダウンロードエンジン: yt-dlp をサブプロセスとしてラップする。
-
-各 DownloadTask は専用の DownloadWorker（QThread）で実行される。
-DownloadManager はタスクをキューに入れ、MaxParallelDownloads を遵守する。
-"""
+# ダウンロードエンジン: yt-dlp をサブプロセスとしてラップする。
+#
+# 各 DownloadTask は専用の DownloadWorker (QThread) で実行され、
+# DownloadManager がキュー管理と並列度 (MaxParallelDownloads) の制御を担う。
 from __future__ import annotations
 
 import os
 import re
+import shlex
 import subprocess
 import sys
 import uuid
@@ -14,48 +14,88 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# Windows でサブプロセスのコンソールウィンドウを非表示にするフラグ
-_POPEN_FLAGS: dict = (
-    {"creationflags": 0x08000000} if sys.platform == "win32" else {}
-)
-
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 from .config import Config
 
-# ------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────
+# プラットフォーム依存の Popen フラグ
+# ─────────────────────────────────────────────────────────────────────
+
+# Windows ではサブプロセスのコンソールウィンドウを抑制する。
+# 他プラットフォームでは空辞書を渡せばよい (no-op)。
+_POPEN_FLAGS: Dict[str, int] = (
+    {"creationflags": 0x08000000} if sys.platform == "win32" else {}
+)
+
+# ─────────────────────────────────────────────────────────────────────
 # フォーマット / 画質プリセット
-# ------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────
 
 VIDEO_QUALITY_MAP: Dict[str, str] = {
-    "Best": "bestvideo+bestaudio/best",
-    "4K (2160p)": "bestvideo[height<=2160]+bestaudio/best[height<=2160]",
-    "Full HD (1080p)": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-    "HD (720p)": "bestvideo[height<=720]+bestaudio/best[height<=720]",
-    "SD (480p)": "bestvideo[height<=480]+bestaudio/best[height<=480]",
-    "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
+    "Best":             "bestvideo+bestaudio/best",
+    "4K (2160p)":       "bestvideo[height<=2160]+bestaudio/best[height<=2160]",
+    "Full HD (1080p)":  "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+    "HD (720p)":        "bestvideo[height<=720]+bestaudio/best[height<=720]",
+    "SD (480p)":        "bestvideo[height<=480]+bestaudio/best[height<=480]",
+    "360p":             "bestvideo[height<=360]+bestaudio/best[height<=360]",
 }
+VIDEO_QUALITIES: List[str] = list(VIDEO_QUALITY_MAP)
 
-VIDEO_QUALITIES = list(VIDEO_QUALITY_MAP)
-AUDIO_FORMATS = ["best", "mp3", "m4a", "opus", "flac", "wav"]
-CONTAINERS = ["mp4", "mkv", "webm", "avi"]
+AUDIO_FORMATS: List[str] = ["best", "mp3", "m4a", "opus", "flac", "wav"]
+CONTAINERS:    List[str] = ["mp4", "mkv", "webm", "avi"]
 
-# ------------------------------------------------------------------
+DEFAULT_FILENAME_TEMPLATE = "%(title)s [%(id)s].%(ext)s"
+
+# ハードウェアエンコーダ別の H.265 ffmpeg オプション
+_HW_ENCODER: Dict[str, str] = {
+    "nvidia": "hevc_nvenc -rc vbr -cq 28 -preset p4",
+    "amd":    "hevc_amf -quality balanced -qp_i 28 -qp_p 28",
+    "intel":  "hevc_qsv -global_quality 28 -preset medium",
+}
+_SW_ENCODER = "libx265 -crf 28 -preset medium"
+
+# ─────────────────────────────────────────────────────────────────────
+# タスクのステータス定数
+# ─────────────────────────────────────────────────────────────────────
+
+class Status:
+    # ダウンロードタスクの状態を表す文字列定数。
+
+    QUEUED      = "queued"
+    DOWNLOADING = "downloading"
+    PROCESSING  = "processing"
+    DONE        = "done"
+    FAILED      = "failed"
+    CANCELLED   = "cancelled"
+
+    # 終了状態 (それ以上遷移しない) の集合
+    TERMINAL = frozenset({DONE, FAILED, CANCELLED})
+
+
+# ─────────────────────────────────────────────────────────────────────
 # 進捗のパース
-# ------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────
 
+# 例: [download]  42.5% of 100.00MiB at 1.20MiB/s ETA 00:30
 _PROGRESS_RE = re.compile(
     r"\[download\]\s+([\d.]+)%\s+of\s+[\d.~]+\S+"
     r"(?:\s+at\s+([\d.]+\S+)\s+ETA\s+(\S+))?"
 )
 
+# 後処理を示す yt-dlp のタグ
+_POSTPROCESS_TAGS = ("[Merger]", "[ExtractAudio]", "[ffmpeg]")
 
-# ------------------------------------------------------------------
+
+# ─────────────────────────────────────────────────────────────────────
 # データモデル
-# ------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────
 
 @dataclass
 class DownloadTask:
+    # ダウンロード 1 件分の設定と実行時状態。
+
+    # ── ユーザ指定 ────────────────────────────────────────────
     url: str
     output_dir: str
     quality: str = "Best"
@@ -66,13 +106,14 @@ class DownloadTask:
     playlist: bool = False
     convert_h265: bool = False
     avoid_bot_detection: bool = False
-    members_only: bool = False  # メンバー限定動画のみダウンロードする
-    trim_start: str = ""        # "HH:MM:SS" または秒数、空 = トリムなし
-    trim_end: str = ""          # "HH:MM:SS" または秒数、空 = 動画の末尾まで
-    filename_template: str = "%(title)s [%(id)s].%(ext)s"  # yt-dlp の -o テンプレート
-    # 実行時の状態
+    members_only: bool = False                # メンバー限定動画のみダウンロードする
+    trim_start: str = ""                      # "HH:MM:SS" / 秒数 / 空 = 先頭から
+    trim_end: str = ""                        # "HH:MM:SS" / 秒数 / 空 = 末尾まで
+    filename_template: str = DEFAULT_FILENAME_TEMPLATE  # yt-dlp の -o テンプレート
+
+    # ── 実行時の状態 ─────────────────────────────────────────
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    status: str = "queued"   # queued | downloading | processing | done | failed | cancelled
+    status: str = Status.QUEUED
     progress: float = 0.0
     speed: str = ""
     eta: str = ""
@@ -80,81 +121,103 @@ class DownloadTask:
     error: str = ""
 
 
-# ------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────
 # ワーカースレッド
-# ------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────
 
 class DownloadWorker(QThread):
-    progress_updated = pyqtSignal(str, float, str, str)   # id, %, 速度, ETA
-    status_changed   = pyqtSignal(str, str)                # id, ステータス
-    title_fetched    = pyqtSignal(str, str)                # id, タイトル
-    download_done    = pyqtSignal(str, bool, str)          # id, 成否, エラー
-    raw_output       = pyqtSignal(str, str)                # id, 生の出力行
+    # 単一の DownloadTask を yt-dlp サブプロセスとして実行する。
 
-    def __init__(self, task: DownloadTask, config: Config, parent: Optional[QObject] = None) -> None:
+    # シグナル定義
+    progress_updated = pyqtSignal(str, float, str, str)  # id, %, 速度, ETA
+    status_changed   = pyqtSignal(str, str)              # id, ステータス
+    title_fetched    = pyqtSignal(str, str)              # id, タイトル
+    download_done    = pyqtSignal(str, bool, str)        # id, 成否, エラー
+    raw_output       = pyqtSignal(str, str)              # id, 生の出力行
+
+    def __init__(
+        self,
+        task: DownloadTask,
+        config: Config,
+        parent: Optional[QObject] = None,
+    ) -> None:
         super().__init__(parent)
         self.task = task
         self._config = config
         self._process: Optional[subprocess.Popen[str]] = None
         self._cancelled = False
 
+    # ------------------------------------------------------------------
+    # 公開API
+    # ------------------------------------------------------------------
+
     def cancel(self) -> None:
+        # 進行中のダウンロードを中止する。
         self._cancelled = True
-        if self._process:
+        if self._process is not None:
             try:
                 self._process.terminate()
             except Exception:
-                pass
+                pass  # 既に終了している場合は無視
 
     # ------------------------------------------------------------------
     # QThread エントリーポイント
     # ------------------------------------------------------------------
 
     def run(self) -> None:
-        self.status_changed.emit(self.task.id, "downloading")
+        self.status_changed.emit(self.task.id, Status.DOWNLOADING)
 
-        # タイトルを事前取得する（ベストエフォート、失敗しても非致命的）
+        # タイトルの事前取得 (ベストエフォート、失敗しても続行)
         title = self._fetch_title()
         if title:
             self.title_fetched.emit(self.task.id, title)
 
+        try:
+            self._run_ytdlp()
+        except Exception as exc:
+            self.status_changed.emit(self.task.id, Status.FAILED)
+            self.download_done.emit(self.task.id, False, str(exc))
+
+    def _run_ytdlp(self) -> None:
+        # yt-dlp を起動し、出力をパースしてシグナルを発火する。
         cmd = self._build_command()
         env = self._build_env()
 
-        try:
-            self._process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                env=env,
-                **_POPEN_FLAGS,
-            )
-            assert self._process.stdout is not None
-            for line in iter(self._process.stdout.readline, ""):
-                if self._cancelled:
-                    break
-                self.raw_output.emit(self.task.id, line.rstrip())
-                self._parse_line(line)
+        self._process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=env,
+            **_POPEN_FLAGS,
+        )
+        assert self._process.stdout is not None
 
-            self._process.wait()
-
+        for line in iter(self._process.stdout.readline, ""):
             if self._cancelled:
-                self.status_changed.emit(self.task.id, "cancelled")
-                self.download_done.emit(self.task.id, False, "cancelled")
-            elif self._process.returncode == 0:
-                self.progress_updated.emit(self.task.id, 100.0, "", "")
-                self.status_changed.emit(self.task.id, "done")
-                self.download_done.emit(self.task.id, True, "")
-            else:
-                self.status_changed.emit(self.task.id, "failed")
-                self.download_done.emit(
-                    self.task.id, False, f"終了コード {self._process.returncode}"
-                )
-        except Exception as exc:
-            self.status_changed.emit(self.task.id, "failed")
-            self.download_done.emit(self.task.id, False, str(exc))
+                break
+            self.raw_output.emit(self.task.id, line.rstrip())
+            self._parse_line(line)
+
+        self._process.wait()
+        self._emit_final_status()
+
+    def _emit_final_status(self) -> None:
+        # 終了コードに応じて最終ステータスを発火する。
+        assert self._process is not None
+        if self._cancelled:
+            self.status_changed.emit(self.task.id, Status.CANCELLED)
+            self.download_done.emit(self.task.id, False, "cancelled")
+        elif self._process.returncode == 0:
+            self.progress_updated.emit(self.task.id, 100.0, "", "")
+            self.status_changed.emit(self.task.id, Status.DONE)
+            self.download_done.emit(self.task.id, True, "")
+        else:
+            self.status_changed.emit(self.task.id, Status.FAILED)
+            self.download_done.emit(
+                self.task.id, False, f"終了コード {self._process.returncode}"
+            )
 
     # ------------------------------------------------------------------
     # コマンド構築
@@ -163,7 +226,7 @@ class DownloadWorker(QThread):
     def _build_command(self) -> List[str]:
         task = self.task
         ytdlp = self._config.get("YtdlpPath", "yt-dlp")
-        cmd = [ytdlp, "--newline", "--progress", "--no-colors"]
+        cmd: List[str] = [ytdlp, "--newline", "--progress", "--no-colors"]
 
         self._add_format_args(cmd, task)
         self._add_subtitle_args(cmd, task)
@@ -171,17 +234,28 @@ class DownloadWorker(QThread):
         if not task.playlist:
             cmd += ["--no-playlist"]
 
-        tpl = task.filename_template or "%(title)s [%(id)s].%(ext)s"
-        cmd += ["-o", str(Path(task.output_dir) / tpl)]
+        # 出力テンプレート
+        template = task.filename_template or DEFAULT_FILENAME_TEMPLATE
+        cmd += ["-o", str(Path(task.output_dir) / template)]
 
+        # トリミング (--download-sections)
         if task.trim_start or task.trim_end:
             start = task.trim_start or "0"
             end   = task.trim_end   or "inf"
-            cmd += ["--download-sections", f"*{start}-{end}", "--force-keyframes-at-cuts"]
+            cmd += [
+                "--download-sections", f"*{start}-{end}",
+                "--force-keyframes-at-cuts",
+            ]
 
+        # bot 検知回避: レート制限とランダムスリープを設定
         if task.avoid_bot_detection:
-            cmd += ["--rate-limit", "5M", "--min-sleep-interval", "15", "--max-sleep-interval", "45"]
+            cmd += [
+                "--rate-limit", "5M",
+                "--min-sleep-interval", "15",
+                "--max-sleep-interval", "45",
+            ]
 
+        # メンバーシップ限定動画のフィルタ
         if task.members_only:
             cmd += ["--match-filter", "availability=subscriber_only"]
 
@@ -189,47 +263,51 @@ class DownloadWorker(QThread):
         self._add_download_ctrl_args(cmd)
         self._add_network_args(cmd)
 
+        # ユーザ指定の追加引数 (シェル風にパース)
         extra_args = self._config.get("ExtraArgs", "").strip()
         if extra_args:
-            import shlex
             cmd += shlex.split(extra_args)
 
         cmd.append(task.url)
         return cmd
 
-    def _add_format_args(self, cmd: List[str], task: "DownloadTask") -> None:
+    def _add_format_args(self, cmd: List[str], task: DownloadTask) -> None:
+        # 音声/動画フォーマット関連の引数を追加する。
         if task.audio_only:
             # Windows は Opus を再生できないため M4A (AAC) に自動変換する
-            audio_fmt = task.audio_format if task.audio_format != "opus" else "m4a"
+            audio_fmt = "m4a" if task.audio_format == "opus" else task.audio_format
             cmd += ["-x", "--audio-format", audio_fmt, "--audio-quality", "0"]
-        else:
-            fmt = VIDEO_QUALITY_MAP.get(task.quality, "bestvideo+bestaudio/best")
-            cmd += ["-f", fmt, "--merge-output-format", task.container]
-            if task.convert_h265:
-                hw = self._config.get("HwAccel", "none")
-                _HW_ENCODER = {
-                    "nvidia": "hevc_nvenc -rc vbr -cq 28 -preset p4",
-                    "amd":    "hevc_amf -quality balanced -qp_i 28 -qp_p 28",
-                    "intel":  "hevc_qsv -global_quality 28 -preset medium",
-                }
-                vcodec = _HW_ENCODER.get(hw, "libx265 -crf 28 -preset medium")
-                cmd += ["--postprocessor-args", f"Merger+ffmpeg:-c:v {vcodec} -c:a aac -b:a 192k"]
-            else:
-                cmd += ["--postprocessor-args", "Merger+ffmpeg:-c:v copy -c:a aac -b:a 192k"]
+            return
 
-    def _add_subtitle_args(self, cmd: List[str], task: "DownloadTask") -> None:
+        fmt = VIDEO_QUALITY_MAP.get(task.quality, VIDEO_QUALITY_MAP["Best"])
+        cmd += ["-f", fmt, "--merge-output-format", task.container]
+
+        if task.convert_h265:
+            hw_accel = self._config.get("HwAccel", "none")
+            vcodec = _HW_ENCODER.get(hw_accel, _SW_ENCODER)
+            cmd += [
+                "--postprocessor-args",
+                f"Merger+ffmpeg:-c:v {vcodec} -c:a aac -b:a 192k",
+            ]
+        else:
+            cmd += [
+                "--postprocessor-args",
+                "Merger+ffmpeg:-c:v copy -c:a aac -b:a 192k",
+            ]
+
+    def _add_subtitle_args(self, cmd: List[str], task: DownloadTask) -> None:
         if not task.embed_subtitles or task.audio_only:
             return
         sub_langs  = self._config.get("SubLangs", "ja,en") or "all,-live_chat"
         sub_format = self._config.get("SubFormat", "srt")
         cmd += ["--embed-subs", "--sub-langs", sub_langs, "--sub-format", sub_format]
-        # "--convert-subs" は ass/lrc/srt/vtt のみ有効。"best" には使えない
+        # --convert-subs は ass/lrc/srt/vtt のみ有効、"best" には使えない
         if sub_format != "best":
             cmd += ["--convert-subs", sub_format]
         if self._config.get("AutoSubs"):
             cmd += ["--write-auto-subs"]
 
-    def _add_postprocess_args(self, cmd: List[str], task: "DownloadTask") -> None:
+    def _add_postprocess_args(self, cmd: List[str], task: DownloadTask) -> None:
         if self._config.get("EmbedThumbnail"):
             cmd += ["--embed-thumbnail", "--convert-thumbnails", "jpg"]
         if self._config.get("EmbedMetadata"):
@@ -257,10 +335,13 @@ class DownloadWorker(QThread):
             cmd += ["--cookies-from-browser", cookies_browser]
         if self._config.get("IsAria2cEnabled"):
             connections = self._config.get("Aria2cConnections", 16)
-            cmd += ["--downloader", "aria2c", "--downloader-args",
-                    f"aria2c:-x {connections} -s {connections} -k 1M"]
+            cmd += [
+                "--downloader", "aria2c",
+                "--downloader-args", f"aria2c:-x {connections} -s {connections} -k 1M",
+            ]
 
-    def _build_env(self) -> dict:
+    def _build_env(self) -> Dict[str, str]:
+        # ffmpeg / aria2c のディレクトリを PATH に追加した環境変数を返す。
         env = os.environ.copy()
         extra_paths: List[str] = []
 
@@ -281,18 +362,20 @@ class DownloadWorker(QThread):
     # ------------------------------------------------------------------
 
     def _parse_line(self, line: str) -> None:
-        m = _PROGRESS_RE.search(line)
-        if m:
-            pct = float(m.group(1))
-            speed = m.group(2) or ""
-            eta = m.group(3) or ""
+        # yt-dlp の 1 行を解析し、進捗 / ステータスを発火する。
+        match = _PROGRESS_RE.search(line)
+        if match:
+            pct   = float(match.group(1))
+            speed = match.group(2) or ""
+            eta   = match.group(3) or ""
             self.progress_updated.emit(self.task.id, pct, speed, eta)
             return
 
-        if any(tag in line for tag in ("[Merger]", "[ExtractAudio]", "[ffmpeg]")):
-            self.status_changed.emit(self.task.id, "processing")
+        if any(tag in line for tag in _POSTPROCESS_TAGS):
+            self.status_changed.emit(self.task.id, Status.PROCESSING)
 
     def _fetch_title(self) -> str:
+        # yt-dlp --print title でタイトルを取得する (失敗時は空文字)。
         try:
             ytdlp = self._config.get("YtdlpPath", "yt-dlp")
             result = subprocess.run(
@@ -303,25 +386,29 @@ class DownloadWorker(QThread):
                 env=self._build_env(),
                 **_POPEN_FLAGS,
             )
-            return result.stdout.strip().splitlines()[0] if result.returncode == 0 else ""
+            if result.returncode != 0:
+                return ""
+            lines = result.stdout.strip().splitlines()
+            return lines[0] if lines else ""
         except Exception:
             return ""
 
 
-# ------------------------------------------------------------------
-# ダウンロードマネージャ（ワーカーを管理）
-# ------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────
+# ダウンロードマネージャ
+# ─────────────────────────────────────────────────────────────────────
 
 class DownloadManager(QObject):
-    """ダウンロードキューと並列ワーカースレッドを管理する。"""
+    # ダウンロードキューと並列ワーカースレッドを管理する。
 
-    task_added       = pyqtSignal(object)          # DownloadTask
+    # シグナル定義
+    task_added       = pyqtSignal(object)                 # DownloadTask
     progress_updated = pyqtSignal(str, float, str, str)
     status_changed   = pyqtSignal(str, str)
     title_fetched    = pyqtSignal(str, str)
     download_done    = pyqtSignal(str, bool, str)
-    raw_output       = pyqtSignal(str, str)         # id, 生の出力行
-    queue_stats      = pyqtSignal(int, int)         # アクティブ数, キュー数
+    raw_output       = pyqtSignal(str, str)               # id, 生の出力行
+    queue_stats      = pyqtSignal(int, int)               # アクティブ数, キュー数
 
     def __init__(self, config: Config, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -334,27 +421,29 @@ class DownloadManager(QObject):
     # ------------------------------------------------------------------
 
     def add(self, task: DownloadTask) -> None:
+        # タスクをキューへ追加し、可能なら即座に実行する。
         self._pending.append(task)
         self.task_added.emit(task)
         self._dispatch()
 
     def cancel(self, task_id: str) -> None:
+        # 指定タスクをキャンセル (実行中はプロセス停止、待機中は破棄)。
         if task_id in self._active:
             self._active[task_id].cancel()
-        else:
-            self._pending = [t for t in self._pending if t.id != task_id]
-            self.status_changed.emit(task_id, "cancelled")
-            self._emit_stats()
+            return
+        self._pending = [t for t in self._pending if t.id != task_id]
+        self.status_changed.emit(task_id, Status.CANCELLED)
+        self._emit_stats()
 
     # ------------------------------------------------------------------
     # 内部スケジューリング
     # ------------------------------------------------------------------
 
     def _dispatch(self) -> None:
+        # 空きスロットがあれば待機中タスクを順次起動する。
         max_parallel = self._config.get("MaxParallelDownloads", 2)
         while len(self._active) < max_parallel and self._pending:
-            task = self._pending.pop(0)
-            self._start_worker(task)
+            self._start_worker(self._pending.pop(0))
         self._emit_stats()
 
     def _start_worker(self, task: DownloadTask) -> None:
