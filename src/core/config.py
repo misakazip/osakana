@@ -26,6 +26,7 @@ DEFAULTS: Dict[str, Any] = {
     "AutoInstall":          False,
     "AutoUpdate":           False,
     "AutoUpdateApp":        False,
+    "SkipSetupWizard":      False,   # キャンセル時に「次回表示しない」を選ぶと True
 
     # ── aria2c ──────────────────────────────────────────────
     "IsAria2cEnabled":      False,
@@ -63,6 +64,7 @@ DEFAULTS: Dict[str, Any] = {
     # ── バイナリパス ────────────────────────────────────────
     "YtdlpPath":            "",
     "FfmpegPath":           "",
+    "DenoPath":             "",
     "Aria2cPath":           "",
 
     # ── その他 ──────────────────────────────────────────────

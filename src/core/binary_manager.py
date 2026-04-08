@@ -1,13 +1,13 @@
-# yt-dlp / ffmpeg / aria2c バイナリの検出とインストールを行う。
+# yt-dlp / ffmpeg / deno / aria2c バイナリの検出とインストールを行う。
 #
 # 設計方針:
 #
-# * yt-dlp と ffmpeg は GitHub Releases などから直接ダウンロードし、
-#   ``~/.osakana/bin/`` 配下に保存する。アプリは常にこのローカルコピーを呼び出す。
-# * aria2c はオプション機能のため、既存のシステム流儀に従う:
-#     - Windows : winget
-#     - Linux   : pkexec + パッケージマネージャ
-#     - macOS   : Homebrew
+# * yt-dlp / ffmpeg / deno は全プラットフォームで GitHub Releases 等から
+#   直接ダウンロードし、~/.osakana/bin/ 配下に保存する。アプリは常に
+#   このローカルコピーを呼び出す。
+# * aria2c は Windows では GitHub Releases からダウンロードするが、
+#   Linux/macOS には公式の単体バイナリがないため、既存のシステム経由
+#   (pkexec + パッケージマネージャ / Homebrew) にフォールバックする。
 from __future__ import annotations
 
 import shutil
@@ -28,31 +28,36 @@ from .platform_detector import PlatformInfo
 # 定数
 # ─────────────────────────────────────────────────────────────────────
 
-# アプリの動作に必須のバイナリ
+# アプリの動作に必須のバイナリ (起動時にウィザードで補充される)
 REQUIRED: List[str] = ["yt-dlp", "ffmpeg"]
-
-# Osakana がローカル管理するバイナリ。これらは常に INSTALL_DIR から呼び出す。
-_MANAGED = frozenset({"yt-dlp", "ffmpeg"})
 
 # ローカルインストール先 (~/.osakana/bin)
 INSTALL_DIR: Path = Path.home() / ".osakana" / "bin"
 
-# ffmpeg バイナリ (Windows と Linux) を提供する BtbN ビルドのベース URL
+# BtbN FFmpeg ビルドの共通 URL プレフィックス
 _BTBN_BASE = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/"
 
 # yt-dlp 公式リリースのベース URL
 _YTDLP_BASE = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
 
-# Homebrew パッケージ名 (aria2c のみ使用)
-_BREW_NAMES: Dict[str, str] = {"aria2c": "aria2"}
+# deno 公式リリースのベース URL
+_DENO_BASE = "https://github.com/denoland/deno/releases/latest/download/"
 
-# winget パッケージ ID (aria2c のみ使用)
-_WINGET_IDS: Dict[str, str] = {"aria2c": "aria2.aria2"}
+# aria2 公式リリース (GitHub Releases にアップロード済みの固定バージョンを使用する。
+# aria2 はリリース頻度が低いので、URL を壊さないために明示的に固定する)
+_ARIA2_VERSION = "1.37.0"
+_ARIA2_BASE = (
+    f"https://github.com/aria2/aria2/releases/download/release-{_ARIA2_VERSION}/"
+)
+
+# Homebrew パッケージ名 (aria2c フォールバック用)
+_BREW_NAMES: Dict[str, str] = {"aria2c": "aria2"}
 
 # 設定ファイルのキー
 _CONFIG_KEYS: Dict[str, str] = {
     "yt-dlp": "YtdlpPath",
     "ffmpeg": "FfmpegPath",
+    "deno":   "DenoPath",
     "aria2c": "Aria2cPath",
 }
 
@@ -66,6 +71,22 @@ _LINUX_PKG_MANAGERS: List[List[str]] = [
 
 # 進捗コールバック (0–100)
 ProgressCallback = Callable[[int], None]
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 管理ポリシー
+# ─────────────────────────────────────────────────────────────────────
+
+def _is_managed(name: str, platform: PlatformInfo) -> bool:
+    # このバイナリを ~/.osakana/bin/ でローカル管理するかを返す。
+    # 管理対象は find() / install() が URL ダウンロード経路を使い、
+    # それ以外はシステム PATH + パッケージマネージャ経路を使う。
+    if name in ("yt-dlp", "ffmpeg", "deno"):
+        return True
+    if name == "aria2c":
+        # aria2 は Windows にしか公式バイナリが無い
+        return platform.is_windows
+    return False
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -105,6 +126,38 @@ def _ffmpeg_url(platform: PlatformInfo) -> str:
     )
 
 
+def _deno_url(platform: PlatformInfo) -> str:
+    # deno 公式は全プラットフォームで zip アーカイブを提供する
+    target = _deno_target(platform)
+    return _DENO_BASE + f"deno-{target}.zip"
+
+
+def _deno_target(platform: PlatformInfo) -> str:
+    if platform.is_windows:
+        # 公式の Windows ビルドは x86_64 のみ
+        return "x86_64-pc-windows-msvc"
+    if platform.is_macos:
+        return "aarch64-apple-darwin" if platform.is_arm64 else "x86_64-apple-darwin"
+    if platform.is_linux:
+        return "aarch64-unknown-linux-gnu" if platform.is_arm64 else "x86_64-unknown-linux-gnu"
+    raise RuntimeError(
+        f"deno の配布物はこの OS には用意されていません: {platform.display_name}"
+    )
+
+
+def _aria2c_url(platform: PlatformInfo) -> str:
+    # aria2c は Windows ビルドのみ URL ダウンロードに対応する
+    if not platform.is_windows:
+        raise RuntimeError(
+            f"aria2c の URL ダウンロードは Windows のみ対応しています "
+            f"(現在の OS: {platform.display_name})"
+        )
+    if platform.is_arm64:
+        # 公式の aria2 Windows ビルドに arm64 は無い
+        raise RuntimeError("aria2c の公式 Windows ARM64 ビルドは提供されていません")
+    return _ARIA2_BASE + f"aria2-{_ARIA2_VERSION}-win-64bit-build1.zip"
+
+
 def _local_filename(name: str, platform: PlatformInfo) -> str:
     # Windows のみ .exe 拡張子を付ける
     return f"{name}.exe" if platform.is_windows else name
@@ -115,7 +168,7 @@ def _local_filename(name: str, platform: PlatformInfo) -> str:
 # ─────────────────────────────────────────────────────────────────────
 
 class BinaryManager:
-    # yt-dlp / ffmpeg / aria2c の検出とインストールを担うファサード。
+    # yt-dlp / ffmpeg / deno / aria2c の検出とインストールを担うファサード。
 
     def __init__(self, config: Config, platform: PlatformInfo) -> None:
         self._config = config
@@ -127,9 +180,9 @@ class BinaryManager:
     # ------------------------------------------------------------------
 
     def find(self, name: str) -> Optional[str]:
-        # 管理対象 (yt-dlp / ffmpeg) は INSTALL_DIR のローカルコピーのみを参照する。
+        # 管理対象は INSTALL_DIR のローカルコピーのみを参照する。
         # システム PATH 上の別バージョンが混入しないようにするため。
-        if name in _MANAGED:
+        if _is_managed(name, self._platform):
             return self._find_managed(name)
         return self._find_system(name)
 
@@ -142,7 +195,7 @@ class BinaryManager:
         return None
 
     def _find_system(self, name: str) -> Optional[str]:
-        # aria2c などのオプション依存はシステム PATH を尊重する
+        # aria2c (Linux/macOS) などはシステム PATH を尊重する
         configured = self._config.get(_CONFIG_KEYS[name], "")
         if configured and Path(configured).is_file():
             return configured
@@ -166,44 +219,61 @@ class BinaryManager:
         progress: Optional[ProgressCallback] = None,
     ) -> Optional[str]:
         # バイナリを自動インストールし、成功時はパスを返す。
-        if name in _MANAGED:
+        if _is_managed(name, self._platform):
             return self._install_managed(name, progress)
         return self._install_system(name)
 
     # ------------------------------------------------------------------
-    # 管理バイナリ (yt-dlp / ffmpeg) の URL ダウンロード
+    # 管理バイナリの URL ダウンロード
     # ------------------------------------------------------------------
 
     def _install_managed(
         self, name: str, progress: Optional[ProgressCallback]
     ) -> str:
         if name == "yt-dlp":
-            return self._install_ytdlp(progress)
+            return self._install_single_binary(name, _ytdlp_url(self._platform), progress)
         if name == "ffmpeg":
-            return self._install_ffmpeg(progress)
+            return self._install_archived_binary(
+                "ffmpeg", _ffmpeg_url(self._platform), progress,
+                archive_suffix=".zip" if (self._platform.is_windows or self._platform.is_macos) else ".tar.xz",
+            )
+        if name == "deno":
+            return self._install_archived_binary(
+                "deno", _deno_url(self._platform), progress,
+                archive_suffix=".zip",
+            )
+        if name == "aria2c":
+            return self._install_archived_binary(
+                "aria2c", _aria2c_url(self._platform), progress,
+                archive_suffix=".zip",
+            )
         raise ValueError(f"未知の管理バイナリ: {name}")
 
-    def _install_ytdlp(self, progress: Optional[ProgressCallback]) -> str:
-        # 単一の実行ファイルなのでそのまま INSTALL_DIR に保存する。
-        url = _ytdlp_url(self._platform)
-        dest = INSTALL_DIR / _local_filename("yt-dlp", self._platform)
-
+    def _install_single_binary(
+        self, name: str, url: str, progress: Optional[ProgressCallback]
+    ) -> str:
+        # アーカイブではなく単体実行ファイルを直接 INSTALL_DIR に保存する。
+        dest = INSTALL_DIR / _local_filename(name, self._platform)
         _download_file(url, dest, progress)
         if not self._platform.is_windows:
             _make_executable(dest)
 
-        self._config.set(_CONFIG_KEYS["yt-dlp"], str(dest))
+        self._config.set(_CONFIG_KEYS[name], str(dest))
         return str(dest)
 
-    def _install_ffmpeg(self, progress: Optional[ProgressCallback]) -> str:
-        # アーカイブをダウンロード → ffmpeg バイナリのみを INSTALL_DIR に展開する。
-        url = _ffmpeg_url(self._platform)
-        dest = INSTALL_DIR / _local_filename("ffmpeg", self._platform)
+    def _install_archived_binary(
+        self,
+        name: str,
+        url: str,
+        progress: Optional[ProgressCallback],
+        archive_suffix: str,
+    ) -> str:
+        # アーカイブ (.zip / .tar.xz) をダウンロードし、
+        # 目的の実行ファイルを 1 本だけ INSTALL_DIR に展開する。
+        dest = INSTALL_DIR / _local_filename(name, self._platform)
+        target_member = _local_filename(name, self._platform)
 
-        # 拡張子はダウンロード後に zipfile で判定するため、suffix は付けなくても可。
-        # ただし extract 側のヒントとして残しておく。
-        suffix = ".zip" if (self._platform.is_windows or self._platform.is_macos) else ".tar.xz"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=archive_suffix, delete=False) as tmp:
             archive_path = Path(tmp.name)
 
         try:
@@ -212,47 +282,31 @@ class BinaryManager:
             _emit(progress, 85)
 
             # 85–100%: 展開
-            _extract_ffmpeg(archive_path, dest, _local_filename("ffmpeg", self._platform))
+            _extract_binary_from_archive(archive_path, dest, target_member)
             if not self._platform.is_windows:
                 _make_executable(dest)
             _emit(progress, 100)
         finally:
             archive_path.unlink(missing_ok=True)
 
-        self._config.set(_CONFIG_KEYS["ffmpeg"], str(dest))
+        self._config.set(_CONFIG_KEYS[name], str(dest))
         return str(dest)
 
     # ------------------------------------------------------------------
-    # システムバイナリ (aria2c) のインストール
+    # システムバイナリ (aria2c on Linux/macOS) のインストール
     # ------------------------------------------------------------------
 
     def _install_system(self, name: str) -> Optional[str]:
-        if self._platform.is_windows:
-            return self._install_winget(name)
         if self._platform.is_linux:
             return self._install_aria2c_linux(name)
         if self._platform.is_macos:
             return self._install_brew(name)
 
         raise RuntimeError(
-            f"自動インストールは Windows / Linux / macOS のみ対応しています "
+            f"自動インストールは Linux / macOS のみ対応しています "
             f"(現在の OS: {self._platform.display_name})。\n"
             f"手動で {name} をインストールしてください。"
         )
-
-    def _install_winget(self, name: str) -> Optional[str]:
-        winget_id = _WINGET_IDS.get(name)
-        if not winget_id:
-            raise ValueError(f"winget ID が定義されていません: {name}")
-
-        _run_checked([
-            "winget", "install",
-            "--id", winget_id,
-            "-e", "--silent",
-            "--accept-source-agreements",
-            "--accept-package-agreements",
-        ])
-        return self._save_path(name, shutil.which(name))
 
     def _install_aria2c_linux(self, name: str) -> Optional[str]:
         # GUI アプリから sudo を直接呼ぶとパスワード入力でハングするため、
@@ -355,8 +409,10 @@ def _download_file(
     _emit(progress, 100)
 
 
-def _extract_ffmpeg(archive_path: Path, dest: Path, target_name: str) -> None:
-    # アーカイブから ffmpeg 実行ファイルを 1 本だけ取り出して dest に書き出す。
+def _extract_binary_from_archive(
+    archive_path: Path, dest: Path, target_name: str
+) -> None:
+    # アーカイブから特定の実行ファイルを 1 本だけ取り出して dest に書き出す。
     # zip / tar.xz の両方に対応 (zip 判定で分岐)。
     dest.parent.mkdir(parents=True, exist_ok=True)
     if zipfile.is_zipfile(archive_path):

@@ -154,6 +154,7 @@ class SettingsTab(QWidget):
         form = QFormLayout(box)
         self._ytdlp_edit  = self._path_row(form, "yt-dlp:",  "yt-dlp")
         self._ffmpeg_edit = self._path_row(form, "ffmpeg:",  "ffmpeg")
+        self._deno_edit   = self._path_row(form, "deno:",    "deno")
         self._aria2c_edit = self._path_row(form, "aria2c:",  "aria2c")
         return box
 
@@ -472,6 +473,7 @@ class SettingsTab(QWidget):
         # バイナリパス
         self._ytdlp_edit.setText(self._config.get("YtdlpPath", ""))
         self._ffmpeg_edit.setText(self._config.get("FfmpegPath", ""))
+        self._deno_edit.setText(self._config.get("DenoPath", ""))
         self._aria2c_edit.setText(self._config.get("Aria2cPath", ""))
 
         # ファイル名
@@ -531,7 +533,7 @@ class SettingsTab(QWidget):
         # 全ウィジェットの変更シグナルを _save に接続する。
         # テキスト入力欄はフォーカスを外したとき / Enter で保存
         for edit in (
-            self._ytdlp_edit, self._ffmpeg_edit, self._aria2c_edit,
+            self._ytdlp_edit, self._ffmpeg_edit, self._deno_edit, self._aria2c_edit,
             self._filename_edit, self._speed_limit_edit, self._archive_edit,
             self._sub_langs_edit, self._proxy_edit, self._extra_args_edit,
         ):
@@ -569,6 +571,7 @@ class SettingsTab(QWidget):
             # ── バイナリパス ───────────────────────────
             "YtdlpPath":            self._ytdlp_edit.text().strip(),
             "FfmpegPath":           self._ffmpeg_edit.text().strip(),
+            "DenoPath":             self._deno_edit.text().strip(),
             "Aria2cPath":           self._aria2c_edit.text().strip(),
             # ── ファイル名 ─────────────────────────────
             "FilenameTemplate":     self._filename_edit.text().strip() or DEFAULT_FILENAME_TEMPLATE,

@@ -121,6 +121,15 @@ class SetupWizard(QDialog):
         self._auto_update_cb.setChecked(False)
         layout.addWidget(self._auto_update_cb)
 
+        # スキップ時に次回以降もウィザードを開かないためのオプション
+        self._dont_show_again_cb = QCheckBox(
+            "次回アプリ起動時にこのセットアップを表示しない"
+        )
+        self._dont_show_again_cb.setChecked(
+            bool(self._config.get("SkipSetupWizard"))
+        )
+        layout.addWidget(self._dont_show_again_cb)
+
         layout.addWidget(self._build_button_box())
 
     def _build_header(self) -> QLabel:
@@ -189,7 +198,7 @@ class SetupWizard(QDialog):
         self._install_btn.clicked.connect(self._on_install_clicked)
 
         self._skip_btn = QPushButton("スキップして起動")
-        self._skip_btn.clicked.connect(self.reject)
+        self._skip_btn.clicked.connect(self._on_skip_clicked)
 
         self._btn_box.addButton(self._install_btn, QDialogButtonBox.ButtonRole.AcceptRole)
         self._btn_box.addButton(self._skip_btn,    QDialogButtonBox.ButtonRole.RejectRole)
@@ -255,8 +264,14 @@ class SetupWizard(QDialog):
     # 終了処理
     # ------------------------------------------------------------------
 
+    def _on_skip_clicked(self) -> None:
+        # キャンセル時も「次回表示しない」チェック状態を保存してから閉じる。
+        self._config.set("SkipSetupWizard", self._dont_show_again_cb.isChecked())
+        self.reject()
+
     def _finish(self) -> None:
         self._config.set("AutoUpdate", self._auto_update_cb.isChecked())
+        self._config.set("SkipSetupWizard", self._dont_show_again_cb.isChecked())
         self.accept()
 
     def _append_log(self, text: str) -> None:

@@ -23,14 +23,23 @@ from gui.style import DARK_STYLE, LIGHT_STYLE
 # 起動前フェーズ: セットアップ / アップデート確認
 # ─────────────────────────────────────────────────────────────────────
 
+# 初回起動時にセットアップウィザードで案内するバイナリ一覧。
+# yt-dlp / ffmpeg は必須、deno / aria2c は任意機能だが揃えて案内する。
+_INSTALLABLE_AT_STARTUP = ["yt-dlp", "ffmpeg", "deno", "aria2c"]
+
+
 def _ensure_required_binaries(
     binary_manager: BinaryManager,
     config: Config,
     platform_info: PlatformInfo,
 ) -> bool:
-    # 必須バイナリが揃っていなければセットアップウィザードを表示する。
+    # インストール対象バイナリのうち不足しているものがあればウィザードを表示する。
     # 続行してよい場合 True、ユーザがキャンセルした場合 False を返す。
-    missing = binary_manager.get_missing()
+    # ユーザが「次回表示しない」を選んでいればウィザードは一切開かない。
+    if config.get("SkipSetupWizard"):
+        return True
+
+    missing = [n for n in _INSTALLABLE_AT_STARTUP if not binary_manager.find(n)]
     if not missing:
         return True
 

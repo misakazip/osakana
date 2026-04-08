@@ -336,6 +336,9 @@ class DownloadTab(QWidget):
     def _connect_manager(self) -> None:
         self._manager.task_added.connect(self._on_task_added)
         self._manager.progress_updated.connect(self._queue.update_progress)
+        # 各タスクの進捗率変化も全体バーに反映する (完了カウントだけだと
+        # 2 本目以降のダウンロード中にバーが停止して見えるため)。
+        self._manager.progress_updated.connect(lambda *_: self._update_overall_progress())
         self._manager.status_changed.connect(self._queue.update_status)
         self._manager.status_changed.connect(lambda *_: self._update_overall_progress())
         self._manager.title_fetched.connect(self._queue.update_title)
@@ -349,8 +352,8 @@ class DownloadTab(QWidget):
     def _update_overall_progress(self) -> None:
         done, total = self._queue.get_counts()
         self._overall_label.setText(f"{done} / {total}")
-        pct = int(done / total * 100) if total > 0 else 0
-        self._overall_bar.setValue(pct)
+        # 完了カウントではなく各行の進捗バーの合計で塗る。
+        self._overall_bar.setValue(int(self._queue.get_overall_progress()))
 
     def _on_task_added(self, task: DownloadTask) -> None:
         display = task.url[:80] + ("…" if len(task.url) > 80 else "")

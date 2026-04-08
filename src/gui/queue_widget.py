@@ -151,6 +151,25 @@ class QueueWidget(QTableWidget):
         )
         return done, total
 
+    def get_overall_progress(self) -> float:
+        # 全タスクの進捗を 0–100 の平均値として返す。
+        # 終了状態 (done/failed/cancelled) は 100%、実行中は各行の進捗バーの値を
+        # そのまま使う。タスク完了数だけでは 2 本目のダウンロード中に
+        # 値が固定されてしまう問題を解消するため、タスク内部の進捗も反映する。
+        if not self._id_to_row:
+            return 0.0
+
+        total_pct = 0.0
+        for row in self._id_to_row.values():
+            status = self._row_status(row)
+            if status in Status.TERMINAL:
+                total_pct += 100.0
+                continue
+            bar = cast(Optional[QProgressBar], self.cellWidget(row, _COL_PROG))
+            if bar is not None:
+                total_pct += float(bar.value())
+        return total_pct / len(self._id_to_row)
+
     def remove_finished(self) -> None:
         # 完了 / キャンセル / 失敗したすべての行を削除する。
         to_remove: List[Tuple[int, str]] = [
