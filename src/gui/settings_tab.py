@@ -1,8 +1,10 @@
 # 設定タブ: バイナリパス / aria2c / アップデート / インストール設定。
 from __future__ import annotations
 
+import shutil
 from typing import List, Optional, Tuple, cast
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -25,8 +27,8 @@ from PyQt6.QtWidgets import (
 )
 
 from core._license import LICENSE_TEXT
-from core.binary_manager import BinaryManager
-from core.config import Config
+from core.binary_manager import INSTALL_DIR, BinaryManager
+from core.config import CONFIG_PATH, Config
 from core.downloader import DEFAULT_FILENAME_TEMPLATE
 from core.updater import APP_VERSION, OsakanaUpdater, YtDlpUpdater
 from gui.style import DARK_STYLE, LIGHT_STYLE
@@ -71,6 +73,36 @@ _EXTRA_ARGS_HINT_HTML = (
     "スペースを含む値はクォートで囲んでください (例: --match-title \"foo bar\")。"
     "</span></small>"
 )
+
+
+def _purge_osakana_data() -> List[str]:
+    # 設定ファイルとバイナリを全削除する。エラーが出たパスのリストを返す
+    # (空なら全て成功)。
+    errors: List[str] = []
+
+    if CONFIG_PATH.exists():
+        try:
+            CONFIG_PATH.unlink()
+        except OSError as exc:
+            errors.append(f"{CONFIG_PATH}: {exc}")
+
+    # ~/.osakana/bin を丸ごと削除し、親ディレクトリも空なら片付ける。
+    install_root = INSTALL_DIR.parent  # ~/.osakana
+    if INSTALL_DIR.exists():
+        try:
+            shutil.rmtree(INSTALL_DIR)
+        except OSError as exc:
+            errors.append(f"{INSTALL_DIR}: {exc}")
+
+    if install_root.exists():
+        try:
+            # bin 以外に何も無ければ ~/.osakana も削除する。
+            if not any(install_root.iterdir()):
+                install_root.rmdir()
+        except OSError as exc:
+            errors.append(f"{install_root}: {exc}")
+
+    return errors
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -124,6 +156,7 @@ class SettingsTab(QWidget):
             self._build_update_group,
             self._build_install_group,
             self._build_extra_args_group,
+            self._build_reset_group,
             self._build_license_group,
         ):
             inner_layout.addWidget(builder())
@@ -446,6 +479,70 @@ class SettingsTab(QWidget):
         hint.setWordWrap(True)
         layout.addWidget(hint)
         return box
+
+    # ── 初期化 ────────────────────────────────────────────────
+
+    def _build_reset_group(self) -> QGroupBox:
+        box = QGroupBox("初期化")
+        layout = QVBoxLayout(box)
+
+        desc = QLabel(
+            "設定ファイル (<code>~/.osakana_config</code>) と、"
+            "Osakana がインストールしたバイナリ (<code>~/.osakana/bin/</code>) を"
+            "すべて削除して初期状態に戻します。<br>"
+            "<b>この操作は取り消せません。</b>"
+        )
+        desc.setWordWrap(True)
+        desc.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(desc)
+
+        reset_btn = QPushButton("設定とバイナリを削除して初期化…")
+        reset_btn.clicked.connect(self._on_reset_clicked)
+        layout.addWidget(reset_btn)
+        return box
+
+    def _on_reset_clicked(self) -> None:
+        # 2 段階確認でユーザの誤操作を防ぐ。
+        first = QMessageBox.warning(
+            self,
+            "初期化の確認",
+            "設定ファイルとインストール済みバイナリをすべて削除します。\n"
+            "この操作は取り消せません。\n\n本当に実行しますか？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if first != QMessageBox.StandardButton.Yes:
+            return
+
+        second = QMessageBox.warning(
+            self,
+            "最終確認",
+            f"以下を削除します:\n\n"
+            f"  • {CONFIG_PATH}\n"
+            f"  • {INSTALL_DIR}\n\n"
+            f"削除後、アプリは自動的に終了します。",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if second != QMessageBox.StandardButton.Ok:
+            return
+
+        errors = _purge_osakana_data()
+        if errors:
+            QMessageBox.critical(
+                self,
+                "初期化エラー",
+                "一部のファイルを削除できませんでした:\n\n" + "\n".join(errors),
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "初期化完了",
+            "設定とバイナリを削除しました。アプリを終了します。\n"
+            "次回起動時にセットアップウィザードが再度表示されます。",
+        )
+        QApplication.quit()
 
     # ── ライセンス ────────────────────────────────────────────
 
