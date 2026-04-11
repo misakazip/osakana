@@ -1,5 +1,7 @@
 # Osakana
 
+[![Build Binaries](https://github.com/misakazip/osakana/actions/workflows/build.yml/badge.svg?branch=main&event=push)](https://github.com/misakazip/osakana/actions/workflows/build.yml)
+
 yt-dlp をベースにした GUI ダウンローダー。Windows / Linux (x64・ARM64) 向けのスタンドアロンバイナリを提供します。
 
 ## 機能
