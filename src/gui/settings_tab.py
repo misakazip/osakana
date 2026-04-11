@@ -4,8 +4,8 @@ from __future__ import annotations
 import shutil
 from typing import List, Optional, Tuple, cast
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
@@ -714,6 +714,25 @@ class SettingsTab(QWidget):
         from core.platform_detector import detect as detect_platform
         from gui.setup_wizard import SetupWizard
 
+        platform_info = detect_platform()
+
+        # Linux / macOS では自動インストールを行わず、手動導入の案内に留める。
+        if not platform_info.is_windows:
+            QMessageBox.information(
+                self,
+                "aria2c が見つかりません",
+                "aria2c がシステム上にインストールされていません。\n\n"
+                "ターミナルで以下のいずれかを実行してインストールしてください:\n\n"
+                "  Debian / Ubuntu : sudo apt install aria2\n"
+                "  Fedora / RHEL   : sudo dnf install aria2\n"
+                "  Arch Linux      : sudo pacman -S aria2\n"
+                "  openSUSE        : sudo zypper install aria2\n"
+                "  macOS (Homebrew): brew install aria2\n\n"
+                "インストール後、Osakana を再起動すると自動的に検出されます。",
+            )
+            return
+
+        # Windows: 自動インストールウィザードを表示する。
         answer = QMessageBox.question(
             self,
             "aria2c が見つかりません",
@@ -727,7 +746,7 @@ class SettingsTab(QWidget):
             missing=["aria2c"],
             manager=self._bm,
             config=self._config,
-            platform=detect_platform(),
+            platform=platform_info,
             parent=self,
         )
         wizard.exec()

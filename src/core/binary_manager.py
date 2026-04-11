@@ -5,14 +5,14 @@
 # * yt-dlp / ffmpeg / deno は全プラットフォームで GitHub Releases 等から
 #   直接ダウンロードし、~/.osakana/bin/ 配下に保存する。アプリは常に
 #   このローカルコピーを呼び出す。
-# * aria2c は Windows では GitHub Releases からダウンロードするが、
-#   Linux/macOS には公式の単体バイナリがないため、既存のシステム経由
-#   (pkexec + パッケージマネージャ / Homebrew) にフォールバックする。
+# * aria2c は Windows のみ GitHub Releases からダウンロードする。
+#   Linux/macOS には公式の単体バイナリが無いため自動インストールは行わず、
+#   ユーザがシステムパッケージマネージャ (apt / dnf / pacman / brew 等)
+#   経由で別途インストールする想定。find() はシステム PATH を検索する。
 from __future__ import annotations
 
 import shutil
 import stat
-import subprocess
 import tarfile
 import tempfile
 import zipfile
@@ -50,9 +50,6 @@ _ARIA2_BASE = (
     f"https://github.com/aria2/aria2/releases/download/release-{_ARIA2_VERSION}/"
 )
 
-# Homebrew パッケージ名 (aria2c フォールバック用)
-_BREW_NAMES: Dict[str, str] = {"aria2c": "aria2"}
-
 # 設定ファイルのキー
 _CONFIG_KEYS: Dict[str, str] = {
     "yt-dlp": "YtdlpPath",
@@ -60,14 +57,6 @@ _CONFIG_KEYS: Dict[str, str] = {
     "deno":   "DenoPath",
     "aria2c": "Aria2cPath",
 }
-
-# Linux で aria2 をインストールできるパッケージマネージャ候補
-_LINUX_PKG_MANAGERS: List[List[str]] = [
-    ["apt-get", "install", "-y", "aria2"],
-    ["dnf",     "install", "-y", "aria2"],
-    ["pacman",  "-S", "--noconfirm", "aria2"],
-    ["zypper",  "install", "-y", "aria2"],
-]
 
 # 進捗コールバック (0–100)
 ProgressCallback = Callable[[int], None]
@@ -219,9 +208,15 @@ class BinaryManager:
         progress: Optional[ProgressCallback] = None,
     ) -> Optional[str]:
         # バイナリを自動インストールし、成功時はパスを返す。
+        # 管理対象外のバイナリ (Linux/macOS の aria2c など) は自動インストール
+        # を行わず、ユーザにシステムパッケージマネージャでの導入を促す。
         if _is_managed(name, self._platform):
             return self._install_managed(name, progress)
-        return self._install_system(name)
+        raise RuntimeError(
+            f"{name} の自動インストールは {self._platform.display_name} では"
+            f"対応していません。システムのパッケージマネージャ (apt / dnf / "
+            f"pacman / brew など) でインストールしてください。"
+        )
 
     # ------------------------------------------------------------------
     # 管理バイナリの URL ダウンロード
@@ -293,72 +288,6 @@ class BinaryManager:
         return str(dest)
 
     # ------------------------------------------------------------------
-    # システムバイナリ (aria2c on Linux/macOS) のインストール
-    # ------------------------------------------------------------------
-
-    def _install_system(self, name: str) -> Optional[str]:
-        if self._platform.is_linux:
-            return self._install_aria2c_linux(name)
-        if self._platform.is_macos:
-            return self._install_brew(name)
-
-        raise RuntimeError(
-            f"自動インストールは Linux / macOS のみ対応しています "
-            f"(現在の OS: {self._platform.display_name})。\n"
-            f"手動で {name} をインストールしてください。"
-        )
-
-    def _install_aria2c_linux(self, name: str) -> Optional[str]:
-        # GUI アプリから sudo を直接呼ぶとパスワード入力でハングするため、
-        # Polkit の pkexec を使い GUI 特権昇格ダイアログを表示する。
-        if name != "aria2c":
-            raise ValueError(f"Linux 自動インストール非対応: {name}")
-
-        cmd = self._detect_pkg_manager()
-        if cmd is None:
-            raise RuntimeError(
-                "対応するパッケージマネージャが見つかりませんでした。\n"
-                "ターミナルで手動インストールしてください "
-                "(例: sudo apt-get install aria2)。"
-            )
-
-        pkexec = shutil.which("pkexec")
-        if pkexec is None:
-            raise RuntimeError(
-                "pkexec が見つかりません。\n"
-                "ターミナルで手動インストールしてください "
-                "(例: sudo apt-get install aria2)。"
-            )
-
-        _run_checked([pkexec, *cmd])
-        return self._save_path("aria2c", shutil.which("aria2c"))
-
-    def _detect_pkg_manager(self) -> Optional[List[str]]:
-        for cmd in _LINUX_PKG_MANAGERS:
-            if shutil.which(cmd[0]):
-                return cmd
-        return None
-
-    def _install_brew(self, name: str) -> Optional[str]:
-        brew = shutil.which("brew")
-        if not brew:
-            raise RuntimeError(
-                "Homebrew (brew) が見つかりません。\n"
-                "以下のコマンドをターミナルに貼り付けて Homebrew を"
-                "インストールしてください:\n\n"
-                '/bin/bash -c "$(curl -fsSL'
-                ' https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"\n\n'
-                "インストール後、アプリを再起動して再度セットアップを実行してください。"
-            )
-
-        package = _BREW_NAMES.get(name)
-        if not package:
-            raise ValueError(f"Homebrew パッケージが不明です: {name}")
-
-        _run_checked([brew, "install", package])
-        return self._save_path(name, shutil.which(name))
-
-    # ------------------------------------------------------------------
     # 内部ヘルパー
     # ------------------------------------------------------------------
 
@@ -372,16 +301,6 @@ class BinaryManager:
 # ─────────────────────────────────────────────────────────────────────
 # モジュールレベルのユーティリティ
 # ─────────────────────────────────────────────────────────────────────
-
-def _run_checked(
-    cmd: List[str],
-    fallback_message: str = "コマンドの実行に失敗しました。",
-) -> None:
-    # subprocess.run を実行し、終了コードが非 0 なら RuntimeError を投げる。
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr or result.stdout or fallback_message)
-
 
 def _download_file(
     url: str,

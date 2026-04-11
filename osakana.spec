@@ -8,44 +8,51 @@
 #   3. UPX 圧縮（UPX が PATH にある場合、pyinstaller が自動使用）。
 #   4. デバッグシンボルを削除する（Linux / macOS で有効）。
 #
+# ライセンス方針:
+#   PySide6 (LGPL-3.0) を使用し、Qt の共有ライブラリは PyInstaller によって
+#   実行ファイルとは分離した動的ライブラリとしてバンドルされる。
+#   これにより本体の MIT ライセンスと LGPL-3.0 が両立する。
+#
 import sys
 
 # ── バンドルから除外するモジュール ───────────────────────────────
 _EXCLUDE = [
-    # Qt – 一切インポートしない大きなモジュール
-    "PyQt6.QtWebEngine",
-    "PyQt6.QtWebEngineCore",
-    "PyQt6.QtWebEngineWidgets",
-    "PyQt6.QtWebEngineQuick",
-    "PyQt6.QtDesigner",
-    "PyQt6.QtQuick",
-    "PyQt6.QtQuickWidgets",
-    "PyQt6.QtQml",
-    "PyQt6.Qt3DCore",
-    "PyQt6.Qt3DInput",
-    "PyQt6.Qt3DLogic",
-    "PyQt6.Qt3DRender",
-    "PyQt6.Qt3DAnimation",
-    "PyQt6.Qt3DExtras",
-    "PyQt6.QtSql",
-    "PyQt6.QtBluetooth",
-    "PyQt6.QtNfc",
-    "PyQt6.QtLocation",
-    "PyQt6.QtPositioning",
-    "PyQt6.QtSensors",
-    "PyQt6.QtSerialPort",
-    "PyQt6.QtRemoteObjects",
-    "PyQt6.QtScxml",
-    "PyQt6.QtStateMachine",
-    "PyQt6.QtNetworkAuth",
-    "PyQt6.QtOpenGL",
-    "PyQt6.QtOpenGLWidgets",
-    "PyQt6.QtPdf",
-    "PyQt6.QtPdfWidgets",
-    "PyQt6.QtDataVisualization",
-    "PyQt6.QtCharts",
-    "PyQt6.QtVirtualKeyboard",
-    "PyQt6.QtAxContainer",   # Windows COM（不要）
+    # PySide6 – 一切インポートしない大きなモジュール
+    "PySide6.QtWebEngine",
+    "PySide6.QtWebEngineCore",
+    "PySide6.QtWebEngineWidgets",
+    "PySide6.QtWebEngineQuick",
+    "PySide6.QtDesigner",
+    "PySide6.QtQuick",
+    "PySide6.QtQuickWidgets",
+    "PySide6.QtQml",
+    "PySide6.Qt3DCore",
+    "PySide6.Qt3DInput",
+    "PySide6.Qt3DLogic",
+    "PySide6.Qt3DRender",
+    "PySide6.Qt3DAnimation",
+    "PySide6.Qt3DExtras",
+    "PySide6.QtSql",
+    "PySide6.QtBluetooth",
+    "PySide6.QtNfc",
+    "PySide6.QtLocation",
+    "PySide6.QtPositioning",
+    "PySide6.QtSensors",
+    "PySide6.QtSerialPort",
+    "PySide6.QtRemoteObjects",
+    "PySide6.QtScxml",
+    "PySide6.QtStateMachine",
+    "PySide6.QtNetworkAuth",
+    "PySide6.QtOpenGL",
+    "PySide6.QtOpenGLWidgets",
+    "PySide6.QtPdf",
+    "PySide6.QtPdfWidgets",
+    "PySide6.QtDataVisualization",
+    "PySide6.QtCharts",
+    "PySide6.QtVirtualKeyboard",
+    "PySide6.QtAxContainer",   # Windows COM（不要）
+    "PyQt6",
+    "PySide2",
     # stdlib – 安全に除外可能（PyInstaller のフックが依存しないもの）
     "tkinter",
     "_tkinter",
@@ -89,17 +96,17 @@ a = Analysis(
     datas=[("LICENSE", ".")],
     hiddenimports=[
         # 使用するものだけを明示的に取り込む
-        "PyQt6.QtCore",
-        "PyQt6.QtGui",
-        "PyQt6.QtWidgets",
-        "PyQt6.QtMultimedia",
-        "PyQt6.QtMultimediaWidgets",
-        "PyQt6.sip",
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        "PySide6.QtMultimedia",
+        "PySide6.QtMultimediaWidgets",
+        "shiboken6",
     ],
     hookspath=[],
     hooksconfig={
         # Qt フックを必要なプラグインのみに制限する
-        "PyQt6": {
+        "PySide6": {
             "qt_plugins": [
                 "platforms",          # xcb (Linux), windows (Win), cocoa (macOS)
                 "multimedia",         # 音声/動画バックエンド（Qt6 統合済み）

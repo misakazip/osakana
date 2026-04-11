@@ -8,7 +8,7 @@ from pathlib import Path
 # ``src/`` を sys.path に追加してパッケージ解決を有効化する。
 sys.path.insert(0, str(Path(__file__).parent))
 
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from core.binary_manager import BinaryManager
 from core.config import Config
@@ -24,8 +24,15 @@ from gui.style import DARK_STYLE, LIGHT_STYLE
 # ─────────────────────────────────────────────────────────────────────
 
 # 初回起動時にセットアップウィザードで案内するバイナリ一覧。
-# yt-dlp / ffmpeg は必須、deno / aria2c は任意機能だが揃えて案内する。
-_INSTALLABLE_AT_STARTUP = ["yt-dlp", "ffmpeg", "deno", "aria2c"]
+# yt-dlp / ffmpeg は必須、deno は任意機能だが揃えて案内する。
+# aria2c は Windows のみ自動インストール対象 (Linux/macOS では手動)。
+_INSTALLABLE_AT_STARTUP_BASE = ["yt-dlp", "ffmpeg", "deno"]
+
+
+def _installable_at_startup(platform_info: PlatformInfo) -> list[str]:
+    if platform_info.is_windows:
+        return [*_INSTALLABLE_AT_STARTUP_BASE, "aria2c"]
+    return list(_INSTALLABLE_AT_STARTUP_BASE)
 
 
 def _ensure_required_binaries(
@@ -39,7 +46,8 @@ def _ensure_required_binaries(
     if config.get("SkipSetupWizard"):
         return True
 
-    missing = [n for n in _INSTALLABLE_AT_STARTUP if not binary_manager.find(n)]
+    targets = _installable_at_startup(platform_info)
+    missing = [n for n in targets if not binary_manager.find(n)]
     if not missing:
         return True
 
@@ -58,14 +66,18 @@ def _configure_aria2c(
     config: Config,
     platform_info: PlatformInfo,
 ) -> None:
-    # aria2c の検出結果を設定に反映し、必要ならインストールを促す。
+    # aria2c の検出結果を設定に反映する。見つからない場合の挙動はプラットフォーム別:
+    #   * Windows : 有効設定なら自動インストールウィザードを表示
+    #   * その他  : 自動インストールせず、有効設定ならメッセージで案内のみ
     aria2c_path = binary_manager.find("aria2c")
     if aria2c_path:
         config.set("Aria2cPath", aria2c_path)
         return
 
-    if config.get("IsAria2cEnabled"):
-        # 有効設定なのに見つからない → インストールウィザードを表示
+    if not config.get("IsAria2cEnabled"):
+        return
+
+    if platform_info.is_windows:
         SetupWizard(
             missing=["aria2c"],
             manager=binary_manager,
@@ -73,6 +85,22 @@ def _configure_aria2c(
             platform=platform_info,
             parent=None,
         ).exec()
+        return
+
+    # Linux / macOS: 自動インストールしない。手順を案内するだけ。
+    QMessageBox.warning(
+        None,
+        "aria2c が見つかりません",
+        "設定で aria2c を有効にしていますが、システム上に aria2c が"
+        "インストールされていません。\n\n"
+        "ターミナルで以下のいずれかを実行してインストールしてください:\n\n"
+        "  Debian / Ubuntu : sudo apt install aria2\n"
+        "  Fedora / RHEL   : sudo dnf install aria2\n"
+        "  Arch Linux      : sudo pacman -S aria2\n"
+        "  openSUSE        : sudo zypper install aria2\n"
+        "  macOS (Homebrew): brew install aria2\n\n"
+        "インストール後、Osakana を再起動すると自動的に検出されます。",
+    )
 
 
 def _maybe_update_ytdlp(config: Config) -> None:

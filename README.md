@@ -142,15 +142,23 @@ UPX が PATH にある場合は自動で圧縮されます。
 
 ## ライセンス
 
-本プロジェクト（Osakana）は [GNU General Public License v3.0](LICENSE)（GPL-3.0）の下で公開されています。
+本プロジェクト（Osakana）は [MIT License](LICENSE) の下で公開されています。
 
 依存ライブラリはそれぞれのライセンスに従います。詳細は [LICENSE](LICENSE) ファイルを参照してください。
 
-| ライブラリ | ライセンス |
-|---|---|
-| PyQt6 | GPL-3.0 |
-| Qt 6 | LGPL-3.0 / GPL-3.0 |
-| yt-dlp | Unlicense |
-| FFmpeg | LGPL-2.1+ (一部 GPL-2.0+) |
-| aria2 | GPL-2.0 |
-| requests | Apache-2.0 |
+| ライブラリ | ライセンス | 利用形態 |
+|---|---|---|
+| PySide6 (Qt for Python) | LGPL-3.0 | 動的リンク（PyInstaller が共有ライブラリとして同梱） |
+| Qt 6 | LGPL-3.0 | 動的リンク（共有ライブラリとして同梱） |
+| requests | Apache-2.0 | Python パッケージとして利用 |
+| yt-dlp | The Unlicense | 同梱せず、初回起動時に取得して別プロセス実行 |
+| FFmpeg | LGPL-2.1+ / 一部 GPL-2.0+ | 同梱せず、初回起動時に取得して別プロセス実行 |
+| aria2 (任意) | GPL-2.0 | 同梱せず、別プロセス実行 |
+
+yt-dlp / FFmpeg / aria2 の各バイナリは Osakana 本体には同梱されず、初回起動時に
+ユーザのホームディレクトリ (`~/.osakana/bin/`) へ取得されたうえで別プロセスとして
+呼び出されます。プロセス境界をまたぐ単なる呼び出し（mere aggregation）であり、
+これらの GPL/LGPL バイナリのライセンスは Osakana 本体の MIT ライセンスに影響しません。
+
+一方、PySide6 と Qt 6 は PyInstaller により実行ファイルにバンドルされるため、
+LGPL-3.0 の動的リンク条項を満たすよう共有ライブラリとして配置されます。

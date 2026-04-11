@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple, cast
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
@@ -58,7 +58,7 @@ class QueueWidget(QTableWidget):
     # ダウンロードタスクを行単位で表示するテーブル。
 
     # タスク ID を引数にキャンセル要求を発火する
-    cancel_requested = pyqtSignal(str)
+    cancel_requested = Signal(str)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(0, len(_COLUMNS), parent)

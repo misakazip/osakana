@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QDialog,
@@ -40,10 +40,10 @@ from core.platform_detector import PlatformInfo
 class _InstallWorker(QThread):
     # 単一バイナリをバックグラウンドでインストールする QThread。
 
-    progress     = pyqtSignal(str, int)   # バイナリ名, 0–100
-    log_message  = pyqtSignal(str)
-    finished_ok  = pyqtSignal(str, str)   # バイナリ名, インストール先パス
-    finished_err = pyqtSignal(str, str)   # バイナリ名, エラーメッセージ
+    progress     = Signal(str, int)   # バイナリ名, 0–100
+    log_message  = Signal(str)
+    finished_ok  = Signal(str, str)   # バイナリ名, インストール先パス
+    finished_err = Signal(str, str)   # バイナリ名, エラーメッセージ
 
     def __init__(
         self,

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from PyQt6.QtCore import QObject, QThread, pyqtSignal
+from PySide6.QtCore import QObject, QThread, Signal
 
 from .config import Config
 
@@ -129,11 +129,11 @@ class DownloadWorker(QThread):
     # 単一の DownloadTask を yt-dlp サブプロセスとして実行する。
 
     # シグナル定義
-    progress_updated = pyqtSignal(str, float, str, str)  # id, %, 速度, ETA
-    status_changed   = pyqtSignal(str, str)              # id, ステータス
-    title_fetched    = pyqtSignal(str, str)              # id, タイトル
-    download_done    = pyqtSignal(str, bool, str)        # id, 成否, エラー
-    raw_output       = pyqtSignal(str, str)              # id, 生の出力行
+    progress_updated = Signal(str, float, str, str)  # id, %, 速度, ETA
+    status_changed   = Signal(str, str)              # id, ステータス
+    title_fetched    = Signal(str, str)              # id, タイトル
+    download_done    = Signal(str, bool, str)        # id, 成否, エラー
+    raw_output       = Signal(str, str)              # id, 生の出力行
 
     def __init__(
         self,
@@ -227,6 +227,12 @@ class DownloadWorker(QThread):
         task = self.task
         ytdlp = self._config.get("YtdlpPath", "yt-dlp")
         cmd: List[str] = [ytdlp, "--newline", "--progress", "--no-colors"]
+
+        # ffmpeg は ~/.osakana/bin にあるローカルコピーを yt-dlp に明示する。
+        # PATH 経由よりも --ffmpeg-location が優先されるため確実。
+        ffmpeg = self._config.get("FfmpegPath", "")
+        if ffmpeg:
+            cmd += ["--ffmpeg-location", ffmpeg]
 
         self._add_format_args(cmd, task)
         self._add_subtitle_args(cmd, task)
@@ -341,13 +347,17 @@ class DownloadWorker(QThread):
             ]
 
     def _build_env(self) -> Dict[str, str]:
-        # ffmpeg / aria2c のディレクトリを PATH に追加した環境変数を返す。
+        # ffmpeg / deno / aria2c のディレクトリを PATH 先頭に追加した環境変数を返す。
+        # ffmpeg は --ffmpeg-location でも渡しているが、yt-dlp 内部のフォールバックや
+        # ffprobe 検出のために PATH にも乗せておく。
+        # deno は一部 yt-dlp エクストラクタが JS 実行に使うため PATH 経由で検出される。
         env = os.environ.copy()
         extra_paths: List[str] = []
 
-        ffmpeg = self._config.get("FfmpegPath", "")
-        if ffmpeg:
-            extra_paths.append(str(Path(ffmpeg).parent))
+        for key in ("FfmpegPath", "DenoPath"):
+            path = self._config.get(key, "")
+            if path:
+                extra_paths.append(str(Path(path).parent))
 
         aria2c = self._config.get("Aria2cPath", "")
         if aria2c and self._config.get("IsAria2cEnabled"):
@@ -402,13 +412,13 @@ class DownloadManager(QObject):
     # ダウンロードキューと並列ワーカースレッドを管理する。
 
     # シグナル定義
-    task_added       = pyqtSignal(object)                 # DownloadTask
-    progress_updated = pyqtSignal(str, float, str, str)
-    status_changed   = pyqtSignal(str, str)
-    title_fetched    = pyqtSignal(str, str)
-    download_done    = pyqtSignal(str, bool, str)
-    raw_output       = pyqtSignal(str, str)               # id, 生の出力行
-    queue_stats      = pyqtSignal(int, int)               # アクティブ数, キュー数
+    task_added       = Signal(object)                 # DownloadTask
+    progress_updated = Signal(str, float, str, str)
+    status_changed   = Signal(str, str)
+    title_fetched    = Signal(str, str)
+    download_done    = Signal(str, bool, str)
+    raw_output       = Signal(str, str)               # id, 生の出力行
+    queue_stats      = Signal(int, int)               # アクティブ数, キュー数
 
     def __init__(self, config: Config, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)

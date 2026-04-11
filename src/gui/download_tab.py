@@ -5,9 +5,9 @@ import re
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,

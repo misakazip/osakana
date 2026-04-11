@@ -1,64 +1,82 @@
-                    GNU GENERAL PUBLIC LICENSE
-                       Version 3, 29 June 2007
+MIT License
 
- Copyright (C) 2026 Osakana Contributors
+Copyright (c) 2026 Osakana Contributors
 
- Everyone is permitted to copy and distribute verbatim copies
- of this license document, but changing it is not allowed.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-                            Preamble
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-  The GNU General Public License is a free, copyleft license for
-software and other kinds of works.
-
-  When we speak of free software, we are referring to freedom, not
-price. Our General Public Licenses are designed to make sure that you
-have the freedom to share and change all versions of a program--to
-make sure it remains free software for all its users.
-
-  To protect your rights, we need to prevent others from denying you
-these rights or asking you to surrender the rights. Therefore, you have
-certain responsibilities if you distribute copies of the software, or if
-you modify it: responsibilities to respect the freedom of others.
-
-  For the complete terms and conditions, see:
-  https://www.gnu.org/licenses/gpl-3.0.html
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 -------------------------------------------------------------------------------
 
 THIRD-PARTY COMPONENTS
 
-This software depends on the following third-party components, each of which
-is subject to its own license.
+This software depends on or interacts with the following third-party
+components, each of which is subject to its own license. Osakana itself is
+released under the MIT License above; the components below retain their
+original terms.
 
   Python 3
     License : Python Software Foundation License (PSF-2.0)
     URL     : https://docs.python.org/3/license.html
 
-  PyQt6
-    License : GNU General Public License v3 (GPL-3.0)
-              (Commercial license available from Riverbank Computing)
-    URL     : https://www.riverbankcomputing.com/software/pyqt/
+  PySide6 (Qt for Python)
+    License : GNU Lesser General Public License v3 (LGPL-3.0)
+              (Commercial license available from The Qt Company)
+    URL     : https://www.qt.io/qt-for-python
+    Notes   : Used via dynamic linking. PyInstaller bundles the Qt shared
+              libraries as separate files alongside the executable, which
+              satisfies the LGPL-3.0 requirements for combined works.
 
   Qt 6
-    License : GNU Lesser General Public License v3 (LGPL-3.0) /
-              GNU General Public License v3 (GPL-3.0)
+    License : GNU Lesser General Public License v3 (LGPL-3.0)
               (Commercial license available from The Qt Company)
     URL     : https://www.qt.io/licensing/
+    Notes   : Bundled as dynamic libraries (LGPL-compliant). Users can
+              replace the bundled Qt libraries with their own builds.
 
   requests
     License : Apache License 2.0
     URL     : https://github.com/psf/requests/blob/main/LICENSE
 
   yt-dlp
-    License : The Unlicense
+    License : The Unlicense (public domain dedication)
     URL     : https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE
+    Notes   : Downloaded at runtime to ~/.osakana/bin as a standalone
+              executable and invoked as a separate process. Not bundled
+              into Osakana's executable and not statically linked.
 
   FFmpeg
     License : GNU Lesser General Public License v2.1 or later (LGPL-2.1+)
-              (some components are GPL-2.0+)
+              with optional GPL-2.0+ components (x264, x265, etc.) when
+              BtbN's "gpl" build variant is used.
     URL     : https://ffmpeg.org/legal.html
+    Notes   : Downloaded at runtime as a standalone executable
+              (BtbN gpl build on Windows / Linux, evermeet.cx on macOS)
+              and invoked as a separate process. NOT bundled into
+              Osakana's executable. Because the binary is fetched
+              independently and only invoked across a process boundary,
+              this is "mere aggregation" and does not affect Osakana's
+              MIT license.
 
-  aria2
+  aria2 (optional)
     License : GNU General Public License v2 (GPL-2.0)
     URL     : https://github.com/aria2/aria2/blob/master/COPYING
+    Notes   : Optional accelerator. Downloaded at runtime on Windows.
+              NOT bundled into Osakana's executable. Invoked as an
+              external process via yt-dlp's --downloader option, which
+              is mere aggregation and does not affect Osakana's MIT
+              license.

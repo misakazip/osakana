@@ -16,8 +16,8 @@ import re
 import subprocess
 from typing import TYPE_CHECKING, Optional
 
-from PyQt6.QtCore import Qt, QThread, QTimer, QUrl, pyqtSignal
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -35,12 +35,12 @@ from PyQt6.QtWidgets import (
 # ─────────────────────────────────────────────────────────────────────
 
 if TYPE_CHECKING:
-    from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
-    from PyQt6.QtMultimediaWidgets import QVideoWidget
+    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+    from PySide6.QtMultimediaWidgets import QVideoWidget
 
 try:
-    from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer  # noqa: F811
-    from PyQt6.QtMultimediaWidgets import QVideoWidget  # noqa: F811
+    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer  # noqa: F811
+    from PySide6.QtMultimediaWidgets import QVideoWidget  # noqa: F811
     _MULTIMEDIA_OK = True
 except ImportError:
     _MULTIMEDIA_OK = False
@@ -90,8 +90,8 @@ def _fmt(seconds: float) -> str:
 class _StreamUrlWorker(QThread):
     # yt-dlp -g <url> を実行してストリーム URL を 1 本取得する。
 
-    url_ready = pyqtSignal(str)
-    failed    = pyqtSignal(str)
+    url_ready = Signal(str)
+    failed    = Signal(str)
 
     def __init__(self, url: str, ytdlp_path: str) -> None:
         super().__init__()
@@ -232,7 +232,7 @@ class TrimWidget(QGroupBox):
 
         if not _MULTIMEDIA_OK:
             layout.addWidget(QLabel(
-                "⚠ PyQt6.QtMultimedia が利用できないため"
+                "⚠ PySide6.QtMultimedia が利用できないため"
                 "プレビューは無効です。\n"
                 "時刻を手動で入力してください。"
             ))

@@ -5,8 +5,13 @@ on:
     branches: [main]
     paths: ["pyproject.toml"]
 
-permissions:
-  contents: write
+# 認証は全て secrets.PAT で行うため、GITHUB_TOKEN には何の権限も与えない。
+permissions: {}
+
+concurrency:
+  group: auto-release-${{ github.ref }}
+  # 同一ブランチへの連続 push が同じタグを取り合わないよう直列化する
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -14,31 +19,35 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          # PAT で git push するため persist-credentials は維持する
           token: ${{ secrets.PAT }}
 
       - name: Get version from pyproject.toml
         id: version
         run: |
           VERSION=$(grep '^version' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Check if tag exists
         id: tag_check
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          if git ls-remote --tags origin "refs/tags/v${{ steps.version.outputs.version }}" | grep -q .; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q .; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create tag and release
         if: steps.tag_check.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.PAT }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          git tag ${{ steps.version.outputs.tag }}
-          git push origin ${{ steps.version.outputs.tag }}
-          gh release create ${{ steps.version.outputs.tag }} \
-            --title "${{ steps.version.outputs.tag }}" \
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            --title "$TAG" \
             --generate-notes
