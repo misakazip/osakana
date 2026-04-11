@@ -11,7 +11,7 @@ import requests
 # ─────────────────────────────────────────────────────────────────────
 
 # 現在のアプリバージョン (pyproject.toml の version と一致させる)
-APP_VERSION = "0.0.4"
+APP_VERSION = "0.0.5"
 
 # PyPI の JSON API はレート制限がなく認証不要。
 # GitHub API (60 req/h) の代替として使用する。
