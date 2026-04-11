@@ -487,7 +487,7 @@ class SettingsTab(QWidget):
         layout = QVBoxLayout(box)
 
         desc = QLabel(
-            "設定ファイル (<code>~/.osakana_config</code>) と、"
+            "設定ファイル (<code>~/.osakana/config</code>) と、"
             "Osakana がインストールしたバイナリ (<code>~/.osakana/bin/</code>) を"
             "すべて削除して初期状態に戻します。<br>"
             "<b>この操作は取り消せません。</b>"

@@ -1,4 +1,4 @@
-# ~/.osakana_config の読み書きを行う。
+# ~/.osakana/config の読み書きを行う。
 #
 # ファイル形式 (1 行 1 エントリ):
 #
@@ -18,7 +18,10 @@ from .platform_detector import detect as detect_platform
 # 定数
 # ─────────────────────────────────────────────────────────────────────
 
-CONFIG_PATH = Path.home() / ".osakana_config"
+CONFIG_DIR = Path.home() / ".osakana"
+CONFIG_PATH = CONFIG_DIR / "config"
+# 旧バージョンの設定ファイルパス。存在すれば新パスへ一度だけ移行する。
+_LEGACY_CONFIG_PATH = Path.home() / ".osakana_config"
 
 # 設定項目のデフォルト値。UI 上のグループごとに並べてある。
 DEFAULTS: Dict[str, Any] = {
@@ -107,6 +110,14 @@ class Config:
         self._data: Dict[str, Any] = DEFAULTS.copy()
         self._platform = detect_platform()
 
+        # 旧パス (~/.osakana_config) があれば新パスへ移行する。
+        if not CONFIG_PATH.exists() and _LEGACY_CONFIG_PATH.exists():
+            try:
+                CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                _LEGACY_CONFIG_PATH.replace(CONFIG_PATH)
+            except OSError:
+                pass
+
         if CONFIG_PATH.exists():
             self._load()
         else:
@@ -138,6 +149,7 @@ class Config:
             "",
         ]
         body_lines = [f"{key}: {_serialize(value)}" for key, value in self._data.items()]
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         CONFIG_PATH.write_text(
             "\n".join(header_lines + body_lines) + "\n",
             encoding="utf-8",
