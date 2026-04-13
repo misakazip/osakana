@@ -113,7 +113,7 @@ jobs:
 
       # ── ビルド成果物の SLSA 証明書を発行 ───────────────────────────────────────
       - name: Generate build provenance attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/${{ matrix.artifact }}
 
